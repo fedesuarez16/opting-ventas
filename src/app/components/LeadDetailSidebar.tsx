@@ -858,7 +858,9 @@ const LeadDetailSidebar: React.FC<LeadDetailSidebarProps> = ({
                 
                 {/* Chat Button */}
                 {(() => {
-                  const phoneNumber = normalizePhoneNumber(lead.telefono || (lead as any).whatsapp_id || '');
+                  // PRIORIZAR phone (campo real de la tabla) > whatsapp_id > telefono
+                  const phoneRaw = (lead as any).phone || (lead as any).whatsapp_id || lead.telefono || '';
+                  const phoneNumber = normalizePhoneNumber(phoneRaw);
                   if (!phoneNumber || phoneNumber.length < 8) {
                     return (
                       <Button 
@@ -882,6 +884,7 @@ const LeadDetailSidebar: React.FC<LeadDetailSidebarProps> = ({
                       onClick={() => {
                         console.log('🔗 Redirigiendo al chat con número:', phoneNumber);
                         console.log('📋 Datos del lead:', {
+                          phone: (lead as any).phone,
                           telefono: lead.telefono,
                           whatsapp_id: (lead as any).whatsapp_id,
                           normalized: phoneNumber

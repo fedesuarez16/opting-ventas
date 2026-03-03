@@ -157,8 +157,8 @@ const LeadTable: React.FC<LeadTableProps> = ({ leads, visibleColumns, onSelectio
       }
     }
     
-    // Obtener teléfono (prioridad: whatsapp_id > telefono)
-    const telefonoRaw = (lead as any).whatsapp_id || lead.telefono;
+    // Obtener teléfono (prioridad: phone > whatsapp_id > telefono)
+    const telefonoRaw = (lead as any).phone || (lead as any).whatsapp_id || lead.telefono;
     const telefono = (telefonoRaw && String(telefonoRaw).trim().length > 0) 
       ? String(telefonoRaw).trim() 
       : '';

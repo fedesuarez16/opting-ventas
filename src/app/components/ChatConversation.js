@@ -22,7 +22,12 @@ const ChatConversation = ({ conversation, onBack }) => {
 
   // Función para obtener el número de teléfono del contacto (misma lógica que ChatList.js)
   const getContactPhone = (conversation) => {
-    // 1. PRIMERO: Usar campos enriquecidos de la API si existen
+    // 0. PRIMERO: Usar session_id directamente (es el número de teléfono en chat_histories)
+    if (conversation.session_id) {
+      return conversation.session_id;
+    }
+
+    // 1. Usar campos enriquecidos de la API si existen
     if (conversation.enriched_phone_number) {
       return conversation.enriched_phone_number;
     }
@@ -131,11 +136,13 @@ const ChatConversation = ({ conversation, onBack }) => {
         console.log('📞 Buscando lead con número normalizado:', normalizedPhone);
         
         let foundLead = allLeads.find(l => {
-          // El whatsapp_id en la DB es como "5491133370937" sin el +
-          const leadPhone = String(l.whatsapp_id || l.telefono || '').replace(/[^\d]/g, '');
+          // PRIORIZAR phone (campo real de la tabla) > whatsapp_id > telefono
+          // phone puede tener el +, normalizamos ambos para comparar
+          const leadPhoneRaw = l.phone || l.whatsapp_id || l.telefono || '';
+          const leadPhone = String(leadPhoneRaw).replace(/[^\d]/g, '');
           const matches = leadPhone === normalizedPhone;
           if (matches) {
-            console.log('✅ Lead encontrado en cache:', { id: l.id, whatsapp_id: l.whatsapp_id, estado_chat: l.estado_chat });
+            console.log('✅ Lead encontrado en cache:', { id: l.id, phone: l.phone, whatsapp_id: l.whatsapp_id, estado_chat: l.estado_chat });
           }
           return matches;
         }) || null;
@@ -162,7 +169,8 @@ const ChatConversation = ({ conversation, onBack }) => {
         if (foundLead) {
           setSeguimientosCount(foundLead.seguimientos_count || 0);
           // Verificar si el lead tiene seguimientos en la tabla
-          const remoteJid = foundLead.whatsapp_id || foundLead.telefono || '';
+          // PRIORIZAR phone (campo real de la tabla) > whatsapp_id > telefono
+          const remoteJid = foundLead.phone || foundLead.whatsapp_id || foundLead.telefono || '';
           if (remoteJid) {
             const existe = await existeSeguimientoParaLead(remoteJid);
             setTieneSeguimiento(existe);
@@ -236,7 +244,9 @@ const ChatConversation = ({ conversation, onBack }) => {
           console.log('📞 Número normalizado:', normalizedPhone);
           
           let foundLead = allLeads.find(l => {
-            const leadPhone = String(l.whatsapp_id || l.telefono || '').replace(/[^\d]/g, '');
+            // PRIORIZAR phone (campo real de la tabla) > whatsapp_id > telefono
+            const leadPhoneRaw = l.phone || l.whatsapp_id || l.telefono || '';
+            const leadPhone = String(leadPhoneRaw).replace(/[^\d]/g, '');
             return leadPhone === normalizedPhone;
           });
           
@@ -273,7 +283,8 @@ const ChatConversation = ({ conversation, onBack }) => {
   const handleProgramarSeguimiento = async () => {
     if (!lead) return;
     
-    const remoteJid = lead.whatsapp_id || lead.telefono || '';
+    // PRIORIZAR phone (campo real de la tabla) > whatsapp_id > telefono
+    const remoteJid = lead.phone || lead.whatsapp_id || lead.telefono || '';
     
     if (!remoteJid) {
       alert('❌ No se encontró un número de teléfono válido para este lead');
@@ -361,15 +372,17 @@ const ChatConversation = ({ conversation, onBack }) => {
       // Obtener el nombre del contacto si está disponible
       const contactName = getContactName(conversation);
 
-      // Preparar datos del lead
+      // Preparar datos del lead usando los campos REALES de la tabla leads
+      // Campos reales: phone, phone_from, nombre, mensaje_inicial, wamid, waba_id, 
+      // tipo_mensaje, timestamp_mensaje, dentro_horario, estado
       const leadData = {
-        whatsapp_id: normalizedPhone,
+        phone: normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`, // phone debe tener el + y es requerido
         nombre: contactName || null,
-        estado_chat: 1, // Activo por defecto
-        ultima_interaccion: new Date().toISOString(),
-        seguimientos_count: 0,
-        estado: 'frío', // Estado inicial
-        // Nota: chatwoot_conversation_id no existe en la tabla leads
+        estado: 'frio', // Estado inicial (default en la tabla, sin tilde)
+        timestamp_mensaje: new Date().toISOString(),
+        // Campos opcionales que podemos obtener de la conversación si están disponibles
+        phone_from: conversation?.contact_inbox?.source_id || conversation?.meta?.sender?.phone_number || null,
+        mensaje_inicial: conversation?.last_non_activity_message?.content || null,
       };
 
       console.log('➕ Creando lead con datos:', leadData);

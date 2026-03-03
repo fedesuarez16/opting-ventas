@@ -231,9 +231,9 @@ const mapLeadRow = (row: any): Lead => {
   
   return {
     id: String(row.id),
-    nombreCompleto: row.nombre ?? '',
+    nombreCompleto: row.nombre ?? '', // Usar nombre de la tabla como nombreCompleto para compatibilidad
     email: '', // No existe en la tabla
-    telefono: row.whatsapp_id ?? '',
+    telefono: (row as any).phone ?? row.whatsapp_id ?? '', // PRIORIZAR phone (campo real de la tabla)
     estado: estado as Lead['estado'], // Acepta cualquier estado, incluyendo personalizados
     presupuesto: Number(row.presupuesto ?? 0),
     zonaInteres: row.zona ?? '',
@@ -244,8 +244,9 @@ const mapLeadRow = (row: any): Lead => {
     fechaContacto: row.created_at ?? new Date().toISOString(),
     observaciones: row.caracteristicas_buscadas ?? undefined,
     // Campos extras del esquema de Supabase (passthrough)
-    whatsapp_id: row.whatsapp_id ?? undefined,
-    phone: (row as any).phone ?? undefined, // Campo phone de la tabla leads
+    whatsapp_id: (row as any).phone ?? row.whatsapp_id ?? undefined, // Usar phone como whatsapp_id para compatibilidad
+    phone: (row as any).phone ?? undefined, // Campo phone de la tabla leads (PRIORITARIO)
+    phone_from: (row as any).phone_from ?? undefined, // Campo phone_from de la tabla leads
     nombre: row.nombre ?? undefined,
     zona: row.zona ?? undefined,
     tipo_propiedad: row.tipo_propiedad ?? undefined,
@@ -785,35 +786,37 @@ export const createLead = async (leadData: Partial<Lead>): Promise<Lead | null> 
   try {
     console.log('Creating new lead in Supabase:', leadData);
     
-    // Preparar datos para insertar según la estructura real de la tabla
+    // Obtener el número de teléfono (priorizar phone > whatsapp_id > telefono)
+    const phoneRaw = (leadData as any).phone || leadData.telefono || (leadData as any).whatsapp_id || '';
+    if (!phoneRaw) {
+      console.error('❌ No se puede crear lead sin número de teléfono');
+      return null;
+    }
+    
+    // Normalizar el número: asegurar que tenga el + si no lo tiene
+    let phone = phoneRaw.trim();
+    if (!phone.startsWith('+')) {
+      phone = `+${phone}`;
+    }
+    
+    // Preparar datos para insertar según la estructura REAL de la tabla leads
+    // Campos reales: phone, phone_from, nombre, mensaje_inicial, wamid, waba_id, 
+    // tipo_mensaje, timestamp_mensaje, dentro_horario, estado
     const dataToInsert: any = {
-      whatsapp_id: leadData.telefono || leadData.whatsapp_id || `temp_${Date.now()}`, // Campo requerido
-      nombre: leadData.nombreCompleto || leadData.nombre || null,
-      presupuesto: leadData.presupuesto || null,
-      zona: leadData.zonaInteres || leadData.zona || null,
-      tipo_propiedad: leadData.tipoPropiedad || null,
-      forma_pago: leadData.forma_pago || null,
-      intencion: leadData.motivoInteres || leadData.intencion || null,
-      caracteristicas_buscadas: leadData.observaciones || leadData.caracteristicas_buscadas || null,
-      caracteristicas_venta: leadData.caracteristicas_venta || null,
-      propiedades_mostradas: leadData.propiedades_mostradas || null,
-      propiedad_interes: leadData.propiedad_interes || null,
-      ultima_interaccion: new Date().toISOString(),
-      seguimientos_count: leadData.seguimientos_count ?? 0,
-      notas: leadData.notas ?? null,
-      estado_chat: leadData.estado_chat ?? null,
+      phone: phone, // Campo requerido y único
+      nombre: leadData.nombreCompleto || (leadData as any).nombre || leadData.nombre || null,
+      estado: leadData.estado || 'frio', // Estado por defecto
+      // Campos opcionales que pueden venir del leadData
+      phone_from: (leadData as any).phone_from || null,
+      mensaje_inicial: (leadData as any).mensaje_inicial || null,
+      wamid: (leadData as any).wamid || null,
+      waba_id: (leadData as any).waba_id || null,
+      tipo_mensaje: (leadData as any).tipo_mensaje || null,
+      timestamp_mensaje: (leadData as any).timestamp_mensaje || new Date().toISOString(),
+      dentro_horario: (leadData as any).dentro_horario ?? null,
     };
     
-    // Calificar automáticamente el lead SIEMPRE (a menos que se especifique manualmente un estado diferente)
-    // Los estados válidos para calificación automática son: 'frio' y 'tibio'
-    // Si se especifica otro estado manualmente (como 'caliente', 'llamada', 'visita', etc.), se respeta
-    // NUNCA usar 'inicial' o 'activo' - estos estados no deben existir
-    if (!leadData.estado || leadData.estado === 'inicial' || leadData.estado === 'activo') {
-      dataToInsert.estado = await calificarLead(dataToInsert);
-    } else {
-      // Si se especifica un estado válido, usarlo
-      dataToInsert.estado = leadData.estado;
-    }
+    console.log('📝 Datos a insertar (solo campos reales de la tabla):', dataToInsert);
     
     const { data, error } = await (getSupabase() as any)
       .from('leads')
@@ -824,19 +827,39 @@ export const createLead = async (leadData: Partial<Lead>): Promise<Lead | null> 
     if (error) {
       // Si el error es 409 (duplicate key), el lead ya existe, intentar buscarlo
       if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
-        console.log('⚠️ Lead ya existe, buscando lead existente...');
-        const whatsappId = dataToInsert.whatsapp_id;
+        console.log('⚠️ Lead ya existe (phone duplicado), buscando lead existente...');
         
-        // Buscar el lead existente
+        // Buscar el lead existente por phone
         const { data: existingLead, error: fetchError } = await (getSupabase() as any)
           .from('leads')
           .select('*')
-          .eq('whatsapp_id', whatsappId)
+          .eq('phone', phone)
           .single();
         
         if (fetchError || !existingLead) {
-          console.error('Error fetching existing lead:', fetchError);
-          return null;
+          // Si no se encuentra por phone, intentar sin el +
+          const phoneWithoutPlus = phone.replace(/^\+/, '');
+          const { data: existingLead2, error: fetchError2 } = await (getSupabase() as any)
+            .from('leads')
+            .select('*')
+            .eq('phone', phoneWithoutPlus)
+            .single();
+          
+          if (fetchError2 || !existingLead2) {
+            console.error('Error fetching existing lead:', fetchError || fetchError2);
+            return null;
+          }
+          
+          console.log('✅ Lead existente encontrado (sin +):', existingLead2);
+          const mappedLead = mapLeadRow(existingLead2);
+          
+          // Actualizar el cache si no está ya presente
+          const existingInCache = cachedLeads.find(l => l.id === mappedLead.id);
+          if (!existingInCache) {
+            cachedLeads.unshift(mappedLead);
+          }
+          
+          return mappedLead;
         }
         
         console.log('✅ Lead existente encontrado:', existingLead);
@@ -855,7 +878,7 @@ export const createLead = async (leadData: Partial<Lead>): Promise<Lead | null> 
       return null;
     }
     
-    console.log('Successfully created lead:', data);
+    console.log('✅ Lead creado exitosamente:', data);
     
     // Mapear y agregar al cache
     const newLead = mapLeadRow(data);
@@ -869,7 +892,8 @@ export const createLead = async (leadData: Partial<Lead>): Promise<Lead | null> 
 };
 
 /**
- * Busca un lead directamente en Supabase por número de teléfono (whatsapp_id).
+ * Busca un lead directamente en Supabase por número de teléfono.
+ * PRIORIZA el campo 'phone' (campo real de la tabla) sobre 'whatsapp_id'.
  * Intenta múltiples variantes del número para manejar diferencias de formato (+, sin +, etc.)
  */
 export const findLeadByPhone = async (phone: string): Promise<Lead | null> => {
@@ -889,19 +913,20 @@ export const findLeadByPhone = async (phone: string): Promise<Lead | null> => {
     // Intentar buscar usando or() en lugar de in() para mayor compatibilidad
     const supabase = getSupabase();
     
-    // Primero intentar con la primera variante
+    // PRIORIDAD 1: Buscar en el campo 'phone' (campo real de la tabla)
+    // phone puede tener el +, así que intentamos con y sin +
     let { data, error } = await (supabase as any)
       .from('leads')
       .select('*')
-      .eq('whatsapp_id', digitsOnly)
+      .or(`phone.eq.${digitsOnly},phone.eq.+${digitsOnly}`)
       .limit(1);
     
-    // Si no se encuentra, intentar con la segunda variante
+    // Si no se encuentra en phone, intentar con whatsapp_id (para compatibilidad)
     if ((!data || data.length === 0) && !error) {
       const result2 = await (supabase as any)
         .from('leads')
         .select('*')
-        .eq('whatsapp_id', `+${digitsOnly}`)
+        .or(`whatsapp_id.eq.${digitsOnly},whatsapp_id.eq.+${digitsOnly}`)
         .limit(1);
       
       if (result2.data && result2.data.length > 0) {
@@ -910,17 +935,31 @@ export const findLeadByPhone = async (phone: string): Promise<Lead | null> => {
       }
     }
     
-    // Si aún no se encuentra, intentar con ilike para búsqueda parcial
+    // Si aún no se encuentra, intentar con ilike en phone (búsqueda parcial)
     if ((!data || data.length === 0) && !error) {
       const result3 = await (supabase as any)
         .from('leads')
         .select('*')
-        .ilike('whatsapp_id', `%${digitsOnly}%`)
+        .ilike('phone', `%${digitsOnly}%`)
         .limit(1);
       
       if (result3.data && result3.data.length > 0) {
         data = result3.data;
         error = result3.error;
+      }
+    }
+    
+    // Último intento: búsqueda parcial en whatsapp_id (para compatibilidad)
+    if ((!data || data.length === 0) && !error) {
+      const result4 = await (supabase as any)
+        .from('leads')
+        .select('*')
+        .ilike('whatsapp_id', `%${digitsOnly}%`)
+        .limit(1);
+      
+      if (result4.data && result4.data.length > 0) {
+        data = result4.data;
+        error = result4.error;
       }
     }
     

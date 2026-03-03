@@ -301,8 +301,8 @@ export default function LeadsTablePage() {
     try {
       for (const lead of selectedLeads) {
         try {
-          // Obtener número de teléfono del lead
-          const remoteJid = (lead as any).whatsapp_id || lead.telefono || '';
+          // Obtener número de teléfono del lead (PRIORIZAR phone > whatsapp_id > telefono)
+          const remoteJid = (lead as any).phone || (lead as any).whatsapp_id || lead.telefono || '';
           
           if (!remoteJid) {
             console.warn(`Lead ${lead.id} no tiene número de teléfono`);

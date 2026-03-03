@@ -57,7 +57,9 @@ function ChatPageContent() {
           // Normalizar el número de teléfono para comparación
           const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '').replace(/^\+/, '');
           foundLead = allLeads.find(l => {
-            const leadPhone = (l.telefono || (l as any).whatsapp_id || '').replace(/[^\d+]/g, '').replace(/^\+/, '');
+            // PRIORIZAR phone > whatsapp_id > telefono
+            const leadPhoneRaw = (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
+            const leadPhone = leadPhoneRaw.replace(/[^\d+]/g, '').replace(/^\+/, '');
             return leadPhone === normalizedPhone || leadPhone.includes(normalizedPhone) || normalizedPhone.includes(leadPhone);
           }) || null;
         }
