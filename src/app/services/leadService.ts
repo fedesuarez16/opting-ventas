@@ -245,6 +245,7 @@ const mapLeadRow = (row: any): Lead => {
     observaciones: row.caracteristicas_buscadas ?? undefined,
     // Campos extras del esquema de Supabase (passthrough)
     whatsapp_id: row.whatsapp_id ?? undefined,
+    phone: (row as any).phone ?? undefined, // Campo phone de la tabla leads
     nombre: row.nombre ?? undefined,
     zona: row.zona ?? undefined,
     tipo_propiedad: row.tipo_propiedad ?? undefined,

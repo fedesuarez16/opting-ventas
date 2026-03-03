@@ -238,7 +238,12 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
 
   // Función para extraer el número de teléfono del chat para comparación
   const getChatPhoneNumber = (chat) => {
-    // 1. PRIMERO: Usar campos enriquecidos de la API si existen
+    // 0. PRIMERO: Usar session_id directamente (es el número de teléfono en chat_histories)
+    if (chat.session_id) {
+      return chat.session_id;
+    }
+
+    // 1. Usar campos enriquecidos de la API si existen
     if (chat.enriched_phone_number) {
       return chat.enriched_phone_number;
     }
@@ -312,21 +317,24 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   };
 
   // Función para normalizar números de teléfono (más robusta)
+  // Normaliza a solo dígitos (sin +, sin espacios, sin caracteres especiales)
+  // Esto asegura que números como "+5491123456789" y "5491123456789" se normalicen igual
   const normalizePhoneNumber = (phone) => {
     if (!phone) return '';
     
+    // Convertir a string si no lo es
+    let normalized = String(phone);
+    
     // Remover @s.whatsapp.net si existe
-    let normalized = phone.replace('@s.whatsapp.net', '');
+    normalized = normalized.replace('@s.whatsapp.net', '');
     
     // Remover prefijos comunes
     normalized = normalized.replace(/^WAID:/, '');
     normalized = normalized.replace(/^whatsapp:/, '');
     
-    // Remover todo lo que no sean números y el símbolo +
-    normalized = normalized.replace(/[^\d+]/g, '');
-    
-    // Remover + al inicio para comparación consistente
-    normalized = normalized.replace(/^\+/, '');
+    // Remover TODO excepto dígitos (incluyendo el +)
+    // Esto asegura que "+5491123456789" se convierta en "5491123456789"
+    normalized = normalized.replace(/\D/g, '');
     
     return normalized;
   };
@@ -458,17 +466,31 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
         const leadsByPhone = {};
         
         allLeads.forEach(lead => {
-          const phone = lead.telefono || lead.whatsapp_id || '';
+          // PRIORIZAR leads.phone (tiene el +) para comparar con session_id (sin +)
+          // leads.phone = "+5491123456789"
+          // chat_histories.session_id = "5491123456789"
+          const phone = lead.phone || lead.telefono || lead.whatsapp_id || '';
           if (phone) {
+            // Normalizar: remover todo excepto dígitos
+            // "+5491123456789" -> "5491123456789"
+            // "5491123456789" -> "5491123456789"
             const normalizedPhone = normalizePhoneNumber(phone);
             if (normalizedPhone) {
-              // Si ya existe un lead para este teléfono, mantener el primero
-              if (!leadsByPhone[normalizedPhone]) {
-                leadsByPhone[normalizedPhone] = lead;
+              // Guardar en el mapa con el número normalizado (sin +)
+              leadsByPhone[normalizedPhone] = lead;
+              
+              // Debug: log para verificar que se está mapeando correctamente
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`📞 Mapeando lead: phone="${phone}" -> normalized="${normalizedPhone}" -> nombre="${lead.nombre || lead.nombreCompleto || 'sin nombre'}"`);
               }
             }
           }
         });
+        
+        // Debug: mostrar el mapa completo en desarrollo
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📋 LeadsMap creado con', Object.keys(leadsByPhone).length, 'entradas');
+        }
         
         setLeadsMap(leadsByPhone);
       } catch (error) {
@@ -484,10 +506,63 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   // Función para obtener el lead asociado a un chat
   const getLeadForChat = (chat) => {
     const chatPhone = getChatPhoneNumber(chat);
-    if (!chatPhone) return null;
+    if (!chatPhone) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ Chat sin teléfono:', chat.id);
+      }
+      return null;
+    }
     
     const normalizedChatPhone = normalizePhoneNumber(chatPhone);
-    return leadsMap[normalizedChatPhone] || null;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔍 Buscando lead para chat: phone="${chatPhone}" -> normalized="${normalizedChatPhone}"`);
+    }
+    
+    // Primero intentar búsqueda exacta (debería funcionar ahora que ambos están normalizados sin +)
+    if (leadsMap[normalizedChatPhone]) {
+      const foundLead = leadsMap[normalizedChatPhone];
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`✅ Lead encontrado (exacto): nombre="${foundLead.nombre || foundLead.nombreCompleto || 'sin nombre'}"`);
+      }
+      return foundLead;
+    }
+    
+    // Si no se encuentra, intentar búsqueda flexible por últimos dígitos
+    // Esto es útil cuando hay diferencias en el formato (con/sin código de país)
+    const chatPhoneLastDigits = normalizedChatPhone.slice(-Math.min(10, normalizedChatPhone.length));
+    
+    for (const [leadPhoneKey, lead] of Object.entries(leadsMap)) {
+      const normalizedLeadPhone = normalizePhoneNumber(leadPhoneKey);
+      const leadPhoneLastDigits = normalizedLeadPhone.slice(-Math.min(10, normalizedLeadPhone.length));
+      
+      // Comparar últimos dígitos (mínimo 8 dígitos)
+      if (chatPhoneLastDigits.length >= 8 && leadPhoneLastDigits.length >= 8) {
+        if (chatPhoneLastDigits === leadPhoneLastDigits) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`✅ Lead encontrado (últimos dígitos): nombre="${lead.nombre || lead.nombreCompleto || 'sin nombre'}"`);
+          }
+          return lead;
+        }
+      }
+      
+      // También verificar si uno contiene al otro
+      if (normalizedChatPhone.length >= 8 && normalizedLeadPhone.length >= 8) {
+        if (normalizedChatPhone.includes(normalizedLeadPhone) || normalizedLeadPhone.includes(normalizedChatPhone)) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`✅ Lead encontrado (inclusión): nombre="${lead.nombre || lead.nombreCompleto || 'sin nombre'}"`);
+          }
+          return lead;
+        }
+      }
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`❌ Lead NO encontrado para: "${normalizedChatPhone}"`);
+      console.log('📋 Teléfonos disponibles en leadsMap:', Object.keys(leadsMap).slice(0, 5));
+    }
+    
+    return null;
   };
   
   // Función para detectar si el query es un número de teléfono
@@ -1400,24 +1475,29 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
                 </div>
                 <div className="flex-1 min-w-0">
                   {(() => {
-                    const name = getContactName(chat);
+                    // Priorizar el nombre del lead si existe
+                    const lead = getLeadForChat(chat);
+                    const leadName = lead?.nombre || lead?.nombreCompleto || null;
+                    
+                    // Si no hay nombre del lead, usar el nombre del contacto del chat
+                    const contactName = leadName || getContactName(chat);
                     const phone = getContactPhone(chat);
                     
-                    if (name && phone) {
-                      // Mostrar nombre y número
+                    if (contactName && phone) {
+                      // Mostrar nombre (del lead o contacto) y número
                       return (
                         <>
                           <h3 className="font-medium text-gray-900 text-sm truncate">
-                            {name}
+                            {contactName}
                           </h3>
                         
                         </>
                       );
-                    } else if (name) {
+                    } else if (contactName) {
                       // Solo nombre
                       return (
                         <h3 className="font-medium text-gray-900 text-sm truncate">
-                          {name}
+                          {contactName}
                         </h3>
                       );
                     } else if (phone) {
