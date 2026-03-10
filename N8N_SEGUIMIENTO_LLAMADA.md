@@ -12,7 +12,7 @@ Modificar el flujo de seguimiento para que cuando un usuario **NO responda** des
 4. **Marcar Follow-up Enviado** → Actualiza `follow_up_sent = true`
 
 ## Problema
-Después de enviar el follow-up, si el usuario **NO responde**, el lead no se marca como "llamada" automáticamente.
+Después de enviar el follow-up, si el usuario **NO responde**, el lead no se marca como "llamada" automáticamente.                                             
 
 ## Solución: Modificar el Flujo de n8n
 
@@ -28,10 +28,10 @@ Después del nodo **"Marcar Follow-up Enviado"**, agregar los siguientes nodos:
   - **Unit**: "Minutes"
 - **Propósito**: Esperar 15 minutos para ver si el usuario responde
 
-#### 2. **Verificar si Respondió** (IF Node)
+#### 2. **Verificar si Respondió** (IF Node)      
 - **Tipo**: `n8n-nodes-base.if`
 - **Configuración**:
-  - **Condition**: Verificar en `seguimiento_whatsapp` si `responded = true`
+  - **Condition**: Verificar en `seguimiento_whatsapp` si `      responded = true`
   - **Operation**: "Get" desde Supabase
   - **Table**: `seguimiento_whatsapp`
   - **Filter**: `phone = {{ $json.phone }}` AND `responded = true`

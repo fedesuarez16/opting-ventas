@@ -1120,8 +1120,7 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
     }
     // Si el estado actual es válido y no se especifica un nuevo estado, NO cambiar el estado
     
-    // Actualizar ultima_interaccion
-    dataToUpdate.ultima_interaccion = new Date().toISOString();
+    // NOTA: ultima_interaccion no existe en la tabla leads, no se actualiza
     
     console.log('📝 Datos a actualizar:', dataToUpdate);
     
