@@ -23,21 +23,27 @@ export interface MensajeProgramado {
   enviado_at?: string | null;
 }
 
-// Interfaz para cola_seguimientos
+// Interfaz para seguimientos
 export interface ColaSeguimiento {
   id?: number;
   lead_id?: string | number;
   remote_jid?: string;
+  whatsapp_id?: string; // Campo de la tabla seguimientos
   mensaje?: string;
+  mensaje_enviado?: string; // Campo de la tabla seguimientos
   fecha_programada?: string;
   scheduled_at?: string;
+  programado_para?: string; // Campo de la tabla seguimientos
   enviado?: boolean;
   enviado_at?: string | null;
+  enviado_en?: string | null; // Campo de la tabla seguimientos
   estado?: string;
+  tipo?: string; // Campo de la tabla seguimientos
   created_at?: string;
   updated_at?: string;
-  tabla_origen?: string; // Para identificar de qué tabla viene: 'cola_seguimientos' o 'cola_seguimientos_dos'
+  tabla_origen?: string; // Para identificar de qué tabla viene: 'seguimientos'
   plantilla?: string | null; // Nombre de la plantilla seleccionada: 'toque_1_frio', 'toque_2_frio', 'toque_1_tibio', 'toque_2_tibio', 'toque_3_tibio'
+  seguimientos_count?: number; // Para compatibilidad con la UI
   [key: string]: any; // Para campos adicionales que pueda tener la tabla
 }
 
@@ -72,53 +78,73 @@ export const programarMensaje = async (mensajeData: Omit<MensajeProgramado, 'id'
 };
 
 /**
- * Obtiene todos los mensajes programados de las tablas cola_seguimientos y cola_seguimientos_dos
+ * Obtiene todos los mensajes programados de la tabla seguimientos
  * Incluye mensajes con estado pendiente y enviado
  */
 export const getMensajesProgramados = async (): Promise<ColaSeguimiento[]> => {
   try {
-    const allMensajes: ColaSeguimiento[] = [];
-    
-    // Obtener mensajes de cola_seguimientos (pendientes y enviados)
-    const { data: dataCola1, error: errorCola1 } = await (getSupabase() as any)
-      .from('cola_seguimientos')
+    // Obtener mensajes de seguimientos (pendientes y enviados)
+    const { data, error } = await (getSupabase() as any)
+      .from('seguimientos')
       .select('*')
       .in('estado', ['pendiente', 'enviado'])
-      .order('fecha_programada', { ascending: true });
+      .order('programado_para', { ascending: true });
     
-    if (errorCola1) {
-      console.error('Error obteniendo mensajes programados de cola_seguimientos:', errorCola1.message);
-    } else if (dataCola1) {
-      // Agregar identificador de tabla origen
-      const mensajesCola1 = dataCola1.map((m: ColaSeguimiento) => ({
-        ...m,
-        tabla_origen: 'cola_seguimientos'
-      }));
-      allMensajes.push(...mensajesCola1);
+    if (error) {
+      console.error('Error obteniendo mensajes programados de seguimientos:', error.message);
+      return [];
     }
     
-    // Obtener mensajes de cola_seguimientos_dos (pendientes y enviados)
-    const { data: dataCola2, error: errorCola2 } = await (getSupabase() as any)
-      .from('cola_seguimientos_dos')
-      .select('*')
-      .in('estado', ['pendiente', 'enviado'])
-      .order('fecha_programada', { ascending: true });
-    
-    if (errorCola2) {
-      console.error('Error obteniendo mensajes programados de cola_seguimientos_dos:', errorCola2.message);
-    } else if (dataCola2) {
-      // Agregar identificador de tabla origen
-      const mensajesCola2 = dataCola2.map((m: ColaSeguimiento) => ({
-        ...m,
-        tabla_origen: 'cola_seguimientos_dos'
-      }));
-      allMensajes.push(...mensajesCola2);
+    if (!data) {
+      return [];
     }
+    
+    // Mapear los campos de la tabla seguimientos a la interfaz ColaSeguimiento
+    const mensajes: ColaSeguimiento[] = data.map((m: any) => {
+      // Calcular seguimientos_count basado en el tipo si es posible
+      // El tipo puede contener información como 'toque_1_frio', 'toque_2_tibio', etc.
+      let seguimientosCount: number | undefined = undefined;
+      if (m.tipo) {
+        const numeroToque = extraerNumeroToque(m.tipo);
+        const tipoToque = extraerTipoToque(m.tipo);
+        if (numeroToque !== null && tipoToque) {
+          if (tipoToque === 'frio') {
+            // Fríos: seguimientos_count = número del toque - 1 (0-7 para toques 1-8)
+            seguimientosCount = numeroToque - 1;
+          } else if (tipoToque === 'tibio') {
+            // Tibios: seguimientos_count = número del toque + 7 (8-15 para toques 1-8)
+            seguimientosCount = numeroToque + 7;
+          }
+        }
+      }
+      
+      // Mapear campos de seguimientos a ColaSeguimiento
+      const mensaje: ColaSeguimiento = {
+        id: m.id,
+        lead_id: m.lead_id,
+        whatsapp_id: m.whatsapp_id,
+        remote_jid: m.whatsapp_id, // whatsapp_id se mapea también a remote_jid para compatibilidad
+        tipo: m.tipo,
+        programado_para: m.programado_para,
+        fecha_programada: m.programado_para, // Mapear programado_para a fecha_programada
+        scheduled_at: m.programado_para, // Mapear programado_para a scheduled_at
+        enviado_en: m.enviado_en,
+        enviado_at: m.enviado_en, // Mapear enviado_en a enviado_at
+        estado: m.estado,
+        mensaje_enviado: m.mensaje_enviado,
+        mensaje: m.mensaje_enviado, // Mapear mensaje_enviado a mensaje
+        created_at: m.created_at,
+        tabla_origen: 'seguimientos',
+        seguimientos_count: seguimientosCount,
+        plantilla: m.tipo, // Mapear tipo a plantilla para compatibilidad con la UI
+      };
+      return mensaje;
+    });
     
     // Ordenar todos los mensajes por fecha programada
-    const sorted = allMensajes.sort((a: ColaSeguimiento, b: ColaSeguimiento) => {
-      const dateA = new Date(a.fecha_programada || a.scheduled_at || a.created_at || 0).getTime();
-      const dateB = new Date(b.fecha_programada || b.scheduled_at || b.created_at || 0).getTime();
+    const sorted = mensajes.sort((a: ColaSeguimiento, b: ColaSeguimiento) => {
+      const dateA = new Date(a.fecha_programada || a.scheduled_at || a.programado_para || a.created_at || 0).getTime();
+      const dateB = new Date(b.fecha_programada || b.scheduled_at || b.programado_para || b.created_at || 0).getTime();
       return dateA - dateB;
     });
     
@@ -132,11 +158,11 @@ export const getMensajesProgramados = async (): Promise<ColaSeguimiento[]> => {
 /**
  * Elimina un mensaje programado de la cola
  * @param id - ID del mensaje
- * @param tablaOrigen - Tabla de origen: 'cola_seguimientos' o 'cola_seguimientos_dos'
+ * @param tablaOrigen - Tabla de origen: 'seguimientos' (por compatibilidad, se ignora si se pasa otro valor)
  */
 export const eliminarMensajeProgramado = async (id: number, tablaOrigen?: string): Promise<boolean> => {
   try {
-    const tabla = tablaOrigen || 'cola_seguimientos';
+    const tabla = 'seguimientos'; // Siempre usar la tabla seguimientos
     const { error } = await (getSupabase() as any)
       .from(tabla)
       .delete()
@@ -361,11 +387,10 @@ const extraerTipoToque = (plantilla: string | null): 'frio' | 'tibio' | null => 
 
 /**
  * Actualiza la plantilla de un mensaje programado
- * Si la plantilla requiere estar en otra tabla, mueve el mensaje automáticamente
- * También actualiza el seguimientos_count en cola_seguimientos según el número del toque
+ * Como la tabla seguimientos no tiene campo plantilla, actualiza el campo tipo basado en la plantilla
  * @param id - ID del mensaje
  * @param plantilla - Nombre de la plantilla a asignar (puede ser null para quitar la plantilla)
- * @param tablaOrigen - Tabla de origen: 'cola_seguimientos' o 'cola_seguimientos_dos'
+ * @param tablaOrigen - Tabla de origen: 'seguimientos' (por compatibilidad, se ignora si se pasa otro valor)
  * @returns Objeto con { success: boolean, nuevaTabla?: string, nuevoId?: number }
  */
 export const actualizarPlantillaMensaje = async (
@@ -374,98 +399,29 @@ export const actualizarPlantillaMensaje = async (
   tablaOrigen?: string
 ): Promise<{ success: boolean; nuevaTabla?: string; nuevoId?: number }> => {
   try {
-    const tabla = tablaOrigen || 'cola_seguimientos';
+    const tabla = 'seguimientos'; // Siempre usar la tabla seguimientos
     
-    // Determinar en qué tabla debe estar según la plantilla
-    // toque_2_frio → debe estar en cola_seguimientos_dos
-    // Cualquier otra plantilla o sin plantilla → debe estar en cola_seguimientos
-    const tablaDestino = plantilla === 'toque_2_frio' ? 'cola_seguimientos_dos' : 'cola_seguimientos';
-    
-    // Calcular seguimientos_count basado en el número del toque y tipo
-    // Fríos: Toque 1-8 → seguimientos_count = 1-8
-    // Tibios: Toque 1-8 (en nombre) → seguimientos_count = 9-16
-    const numeroToque = extraerNumeroToque(plantilla);
+    // La tabla seguimientos no tiene campo plantilla, pero podemos actualizar el campo tipo
+    // basado en la plantilla seleccionada
     const tipoToque = extraerTipoToque(plantilla);
+    const datosActualizacion: any = {};
     
-    let seguimientosCount: number | null = null;
-    if (numeroToque !== null && tipoToque) {
-      if (tipoToque === 'frio') {
-        // Fríos: seguimientos_count = número del toque (1-8)
-        seguimientosCount = numeroToque;
-      } else if (tipoToque === 'tibio') {
-        // Tibios: seguimientos_count = número del toque + 8 (9-16)
-        seguimientosCount = numeroToque + 8;
-      }
+    // Si hay una plantilla, actualizar el tipo basado en ella
+    // Si no hay plantilla, no actualizar nada (mantener el tipo existente)
+    if (plantilla && tipoToque) {
+      // Mapear el tipo de toque al campo tipo de la tabla seguimientos
+      // Por ejemplo: 'toque_1_frio' → tipo podría ser 'frio' o 'toque_1_frio'
+      datosActualizacion.tipo = plantilla; // Guardar la plantilla completa en el campo tipo
     }
     
-    // Preparar los datos a actualizar
-    // IMPORTANTE: Solo actualizar plantilla y seguimientos_count
-    // NO tocar otros campos como chatwoot_conversation_id
-    const datosActualizacion: any = { plantilla: plantilla };
-    
-    // Solo actualizar seguimientos_count si estamos en cola_seguimientos
-    // y tenemos un número de toque válido
-    if (tablaDestino === 'cola_seguimientos' && seguimientosCount !== null) {
-      datosActualizacion.seguimientos_count = seguimientosCount;
-      console.log(`📊 Actualizando seguimientos_count a ${seguimientosCount} para toque ${numeroToque}`);
+    // Si no hay datos para actualizar, retornar success sin hacer nada
+    if (Object.keys(datosActualizacion).length === 0) {
+      console.log(`ℹ️ No hay campos para actualizar para el mensaje ${id}`);
+      return { success: true, nuevaTabla: tabla };
     }
     
-    // Log para debugging - verificar qué campos se van a actualizar
-    console.log(`🔄 Campos a actualizar:`, Object.keys(datosActualizacion));
+    console.log(`🔄 Actualizando tipo del mensaje ${id} en ${tabla}:`, datosActualizacion);
     
-    // Si necesita moverse a otra tabla
-    if (tabla !== tablaDestino) {
-      console.log(`🔄 Moviendo mensaje de ${tabla} a ${tablaDestino} para plantilla ${plantilla}`);
-      
-      // Mover el mensaje entre tablas (esto preserva todos los campos incluyendo chatwoot_conversation_id)
-      const nuevoId = await moverMensajeEntreTablas(id, tabla, tablaDestino);
-      
-      if (!nuevoId) {
-        console.error('❌ Error moviendo mensaje entre tablas');
-        return { success: false };
-      }
-      
-      // Verificar que el mensaje movido tenga chatwoot_conversation_id antes de actualizar
-      const { data: mensajeMovido, error: errorRead } = await (getSupabase() as any)
-        .from(tablaDestino)
-        .select('chatwoot_conversation_id, plantilla')
-        .eq('id', nuevoId)
-        .single();
-      
-      if (mensajeMovido?.chatwoot_conversation_id) {
-        console.log(`✅ chatwoot_conversation_id preservado después de mover: ${mensajeMovido.chatwoot_conversation_id}`);
-      }
-      
-      // Actualizar solo la plantilla y seguimientos_count en la nueva tabla
-      // No tocar otros campos como chatwoot_conversation_id
-      const { error } = await (getSupabase() as any)
-        .from(tablaDestino)
-        .update(datosActualizacion)
-        .eq('id', nuevoId);
-      
-      if (error) {
-        console.error(`Error actualizando plantilla del mensaje en ${tablaDestino}:`, error.message);
-        return { success: false };
-      }
-      
-      // Verificar que chatwoot_conversation_id sigue presente después de actualizar
-      const { data: mensajeActualizado, error: errorReadAfter } = await (getSupabase() as any)
-        .from(tablaDestino)
-        .select('chatwoot_conversation_id')
-        .eq('id', nuevoId)
-        .single();
-      
-      if (mensajeMovido?.chatwoot_conversation_id && !mensajeActualizado?.chatwoot_conversation_id) {
-        console.error(`❌ ERROR: chatwoot_conversation_id se perdió después de actualizar! Era: ${mensajeMovido.chatwoot_conversation_id}`);
-      } else if (mensajeActualizado?.chatwoot_conversation_id) {
-        console.log(`✅ chatwoot_conversation_id preservado después de actualizar: ${mensajeActualizado.chatwoot_conversation_id}`);
-      }
-      
-      return { success: true, nuevaTabla: tablaDestino, nuevoId };
-    }
-    
-    // Si ya está en la tabla correcta, actualizar solo la plantilla y seguimientos_count
-    // No tocar otros campos como chatwoot_conversation_id
     const { error } = await (getSupabase() as any)
       .from(tabla)
       .update(datosActualizacion)
@@ -487,7 +443,7 @@ export const actualizarPlantillaMensaje = async (
  * Actualiza la fecha programada de un mensaje
  * @param id - ID del mensaje
  * @param fechaProgramada - Nueva fecha y hora programada (puede ser ISO string o formato "YYYY-MM-DD HH:mm:ss")
- * @param tablaOrigen - Tabla de origen: 'cola_seguimientos' o 'cola_seguimientos_dos'
+ * @param tablaOrigen - Tabla de origen: 'seguimientos' (por compatibilidad, se ignora si se pasa otro valor)
  */
 export const actualizarFechaProgramada = async (
   id: number,
@@ -495,7 +451,7 @@ export const actualizarFechaProgramada = async (
   tablaOrigen?: string
 ): Promise<boolean> => {
   try {
-    const tabla = tablaOrigen || 'cola_seguimientos';
+    const tabla = 'seguimientos'; // Siempre usar la tabla seguimientos
     
     // Si ya está en formato "YYYY-MM-DD HH:mm:ss", usarlo directamente
     // Si está en formato ISO (con 'T' o con 'Z'), convertirlo
@@ -521,9 +477,10 @@ export const actualizarFechaProgramada = async (
       fechaFormateada = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     }
     
+    // Actualizar el campo programado_para en la tabla seguimientos
     const { error } = await (getSupabase() as any)
       .from(tabla)
-      .update({ fecha_programada: fechaFormateada })
+      .update({ programado_para: fechaFormateada })
       .eq('id', id);
     
     if (error) {

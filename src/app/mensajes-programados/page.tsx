@@ -111,7 +111,7 @@ export default function MensajesProgramadosPage() {
   const handleStartEditFecha = (mensaje: ColaSeguimiento) => {
     if (!mensaje.id) return;
     
-    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at;
+    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.programado_para;
     if (fechaProgramada) {
       // Convertir a formato datetime-local (YYYY-MM-DDTHH:mm)
       const date = new Date(fechaProgramada);
@@ -299,7 +299,7 @@ export default function MensajesProgramadosPage() {
   const mensajesPendientes = mensajes.filter(m => {
     if (m.estado !== 'pendiente') return false;
     
-    const fechaProgramada = m.fecha_programada || m.scheduled_at;
+    const fechaProgramada = m.fecha_programada || m.scheduled_at || m.programado_para;
     if (!fechaProgramada) return true; // Si no tiene fecha, mostrarlo (sin-fecha)
     
     const fechaMensaje = new Date(fechaProgramada);
@@ -313,7 +313,7 @@ export default function MensajesProgramadosPage() {
 
   // Agrupar mensajes pendientes por día
   const mensajesPendientesPorDia = mensajesPendientes.reduce((acc, mensaje) => {
-    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at;
+    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.programado_para;
     const dayKey = getDayKey(fechaProgramada);
     
     if (!acc[dayKey]) {
@@ -325,7 +325,7 @@ export default function MensajesProgramadosPage() {
 
   // Agrupar mensajes enviados por día
   const mensajesEnviadosPorDia = mensajesEnviados.reduce((acc, mensaje) => {
-    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.enviado_at || undefined;
+    const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.programado_para || mensaje.enviado_at || mensaje.enviado_en || undefined;
     const dayKey = getDayKey(fechaProgramada ?? undefined);
     
     if (!acc[dayKey]) {
@@ -468,15 +468,15 @@ export default function MensajesProgramadosPage() {
                             <div className="space-y-3">
                               {mensajesDelDia
                                 .sort((a, b) => {
-                                  const fechaA = a.fecha_programada || a.scheduled_at;
-                                  const fechaB = b.fecha_programada || b.scheduled_at;
+                                  const fechaA = a.fecha_programada || a.scheduled_at || a.programado_para;
+                                  const fechaB = b.fecha_programada || b.scheduled_at || b.programado_para;
                                   if (!fechaA) return 1;
                                   if (!fechaB) return -1;
                                   return new Date(fechaA).getTime() - new Date(fechaB).getTime();
                                 })
                                 .map((mensaje) => {
-                                  const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at;
-                                  const telefono = normalizePhoneNumber(mensaje.remote_jid || String(mensaje.lead_id || ''));
+                                  const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.programado_para;
+                                  const telefono = normalizePhoneNumber(mensaje.remote_jid || mensaje.whatsapp_id || String(mensaje.lead_id || ''));
                                   const toqueNumber = getToqueNumber(mensaje);
                                   
                                   return (
@@ -662,16 +662,16 @@ export default function MensajesProgramadosPage() {
                             <div className="space-y-3">
                               {mensajesDelDia
                                 .sort((a, b) => {
-                                  const fechaA = a.enviado_at || a.fecha_programada || a.scheduled_at;
-                                  const fechaB = b.enviado_at || b.fecha_programada || b.scheduled_at;
+                                  const fechaA = a.enviado_at || a.enviado_en || a.fecha_programada || a.scheduled_at || a.programado_para;
+                                  const fechaB = b.enviado_at || b.enviado_en || b.fecha_programada || b.scheduled_at || b.programado_para;
                                   if (!fechaA) return 1;
                                   if (!fechaB) return -1;
                                   return new Date(fechaB).getTime() - new Date(fechaA).getTime(); // Más recientes primero
                                 })
                                 .map((mensaje) => {
-                                  const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at;
-                                  const fechaEnviado = mensaje.enviado_at;
-                                  const telefono = normalizePhoneNumber(mensaje.remote_jid || String(mensaje.lead_id || ''));
+                                  const fechaProgramada = mensaje.fecha_programada || mensaje.scheduled_at || mensaje.programado_para;
+                                  const fechaEnviado = mensaje.enviado_at || mensaje.enviado_en;
+                                  const telefono = normalizePhoneNumber(mensaje.remote_jid || mensaje.whatsapp_id || String(mensaje.lead_id || ''));
                                   const toqueNumber = getToqueNumber(mensaje);
                                   
                                   return (
