@@ -20,6 +20,8 @@ export interface Lead {
   observaciones?: string;
   // Campos opcionales provenientes del esquema de Supabase
   whatsapp_id?: string;
+  phone?: string; // Campo phone de la tabla leads (PRIORITARIO)
+  phone_from?: string; // Campo phone_from de la tabla leads
   nombre?: string;
   zona?: string;
   tipo_propiedad?: string;
