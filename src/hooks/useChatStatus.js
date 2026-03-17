@@ -142,12 +142,19 @@ export const useChatStatus = (phoneNumber) => {
       } catch (fetchError) {
         clearTimeout(timeoutId);
         
-        // Manejar timeout específicamente
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Timeout: El webhook de n8n no respondió en 10 segundos');
-        }
-        
-        throw fetchError;
+        // No relanzar: marcar error en estado para que la UI no se rompa (ej. al ir al chat)
+        const message = fetchError.name === 'AbortError'
+          ? 'Timeout: El webhook de n8n no respondió en 10 segundos'
+          : (fetchError.message || 'Error de red');
+        setChatStatus({
+          isActive: false,
+          lastActivity: null,
+          loading: false,
+          error: message,
+          chatData: null,
+          source: 'n8n-webhook'
+        });
+        return;
       }
 
     } catch (err) {

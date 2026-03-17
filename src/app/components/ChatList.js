@@ -34,8 +34,9 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
     }
   }, [readChats]);
   
-  // Obtener el timestamp del último mensaje de un chat
+  // Obtener el timestamp del último mensaje de un chat (defensivo: chat puede ser undefined o sin last_non_activity_message)
   const getLastMessageTimestamp = (chat) => {
+    if (!chat) return 0;
     if (chat.last_non_activity_message?.created_at) {
       const timestamp = chat.last_non_activity_message.created_at;
       // Chatwoot puede enviar timestamps en segundos o milisegundos
@@ -92,6 +93,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   
   // Verificar si el último mensaje fue enviado por el agente
   const isLastMessageFromAgent = (chat) => {
+    if (!chat) return false;
     const lastMessage = chat.last_non_activity_message;
     
     if (!lastMessage) {
@@ -114,6 +116,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   // La lógica es: si el agente contestó (último mensaje es del agente) → leído
   // Si el agente NO contestó (último mensaje es del contacto) → no leído
   const isChatRead = (chat) => {
+    if (!chat?.id) return true;
     // Verificar si hay un marcado manual (para permitir override si es necesario)
     const chatReadData = readChats[chat.id];
     if (chatReadData && chatReadData.manualOverride !== undefined) {
@@ -149,6 +152,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
 
   // Función para obtener el nombre del contacto
   const getContactName = (chat) => {
+    if (!chat) return null;
     const sender = chat.last_non_activity_message?.sender;
     const contact = chat.contact;
     
@@ -182,6 +186,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
 
   // Función para obtener el número de teléfono del contacto
   const getContactPhone = (chat) => {
+    if (!chat) return null;
     const sender = chat.last_non_activity_message?.sender;
     const contact = chat.contact;
     
@@ -397,54 +402,63 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
 
   // Efecto para buscar automáticamente el chat cuando se proporciona un número objetivo
   useEffect(() => {
-    if (targetPhoneNumber && chats.length > 0 && !loading) {
-      const normalizedTarget = normalizePhoneNumber(targetPhoneNumber);
-      
-      console.log('🔍 Buscando chat para número:', targetPhoneNumber);
-      console.log('📱 Número normalizado:', normalizedTarget);
-      
-      if (normalizedTarget) {
-        // Primero buscar en los chats ya cargados
-        const foundChat = findChatByPhone(chats, normalizedTarget);
-        
-        if (foundChat && onSelectChat) {
-          console.log('🎯 Chat seleccionado (local):', foundChat.id);
-          onSelectChat(foundChat);
-        } else if (!targetPhoneSearched && !isSearchingTarget) {
-          // No se encontró localmente → buscar via API server-side
-          console.log('⚠️ Chat no encontrado en los', chats.length, 'chats pre-cargados, buscando en servidor...');
-          setIsSearchingTarget(true);
-          
-          fetch('/api/chats/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phoneNumbers: [targetPhoneNumber] })
-          })
-            .then(res => res.json())
-            .then(data => {
-              if (data.success && data.data && data.data.length > 0) {
-                const foundServerChat = data.data[0];
-                console.log('✅ Chat encontrado via API server-side:', foundServerChat.id);
-                // Guardar el chat encontrado para que aparezca en la lista
-                setServerFoundChat(foundServerChat);
-                // Seleccionar el chat encontrado
-                if (onSelectChat) {
-                  onSelectChat(foundServerChat);
-                }
-              } else {
-                console.warn('⚠️ Chat no encontrado ni localmente ni en servidor para:', normalizedTarget);
-              }
-            })
-            .catch(err => {
-              console.error('❌ Error buscando chat en servidor:', err);
-            })
-            .finally(() => {
-              setTargetPhoneSearched(true);
-              setIsSearchingTarget(false);
-            });
-        }
+    if (!targetPhoneNumber || loading || targetPhoneSearched || isSearchingTarget) return;
+    const normalizedTarget = normalizePhoneNumber(targetPhoneNumber);
+    if (!normalizedTarget) return;
+
+    console.log('🔍 Buscando chat para número:', targetPhoneNumber);
+    console.log('📱 Número normalizado:', normalizedTarget);
+
+    // Si ya hay chats cargados, buscar primero en local
+    if (chats.length > 0) {
+      const foundChat = findChatByPhone(chats, normalizedTarget);
+      if (foundChat && onSelectChat) {
+        console.log('🎯 Chat seleccionado (local):', foundChat.id);
+        onSelectChat(foundChat);
+        return;
       }
     }
+
+    // No encontrado localmente (o lista vacía) → buscar en servidor
+    console.log('⚠️ Buscando en servidor...');
+    setIsSearchingTarget(true);
+    fetch('/api/chats/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumbers: [targetPhoneNumber] })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data && data.data.length > 0) {
+          const foundServerChat = data.data[0];
+          console.log('✅ Chat encontrado via API server-side:', foundServerChat.id);
+          setServerFoundChat(foundServerChat);
+          if (onSelectChat) onSelectChat(foundServerChat);
+        } else {
+          // No hay conversación aún: abrir panel con conversación vacía (objeto sintético)
+          console.warn('⚠️ Chat no encontrado para:', normalizedTarget, '- abriendo conversación vacía');
+          if (onSelectChat) {
+            onSelectChat({
+              id: normalizedTarget,
+              session_id: normalizedTarget,
+              enriched_phone_number: normalizedTarget,
+              last_non_activity_message: null,
+              updated_at: null,
+              created_at: null,
+              contact: null,
+              meta: { sender: {} },
+              additional_attributes: {}
+            });
+          }
+        }
+      })
+      .catch(err => {
+        console.error('❌ Error buscando chat en servidor:', err);
+      })
+      .finally(() => {
+        setTargetPhoneSearched(true);
+        setIsSearchingTarget(false);
+      });
   }, [targetPhoneNumber, chats, loading, onSelectChat, targetPhoneSearched, isSearchingTarget]);
 
   // Resetear el estado de búsqueda cuando cambia el targetPhoneNumber

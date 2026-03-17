@@ -22,6 +22,7 @@ const ChatConversation = ({ conversation, onBack }) => {
 
   // Función para obtener el número de teléfono del contacto (misma lógica que ChatList.js)
   const getContactPhone = (conversation) => {
+    if (!conversation) return null;
     // 0. PRIMERO: Usar session_id directamente (es el número de teléfono en chat_histories)
     if (conversation.session_id) {
       return conversation.session_id;

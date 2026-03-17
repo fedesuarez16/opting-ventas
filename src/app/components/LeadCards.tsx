@@ -137,6 +137,20 @@ const LeadCards: React.FC<LeadCardsProps> = ({ leads, onLeadStatusChange, onEdit
     loadMatchingProperties();
   }, [leads]);
 
+  // Combinar columnas visibles con columnas que tienen leads (debe ir antes de cualquier return para cumplir reglas de hooks)
+  const allColumnsToShow = useMemo(() => {
+    const visibleSet = new Set(statusOrder);
+    const columnsWithLeads = Object.keys(groupedLeads)
+      .filter(status => groupedLeads[status].length > 0)
+      .map(normalizeEstado)
+      .filter((status, index, self) => self.indexOf(status) === index);
+    const filteredColumns = columnsWithLeads.filter(status =>
+      status !== 'fríos' && status !== 'frios' && status !== 'tibios' && status !== 'calientes' && status !== 'llamadas' && status !== 'visitas'
+    );
+    const customColumns = filteredColumns.filter(status => !visibleSet.has(status));
+    return [...statusOrder, ...customColumns];
+  }, [statusOrder, groupedLeads]);
+
   if (leads.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-42 px bg-white ">
@@ -482,25 +496,6 @@ const LeadCards: React.FC<LeadCardsProps> = ({ leads, onLeadStatusChange, onEdit
         return 'border-gray-400 text-gray-700';
     }
   };
-
-  // Combinar columnas visibles con columnas que tienen leads (para mostrar estados personalizados)
-  const allColumnsToShow = useMemo(() => {
-    const visibleSet = new Set(statusOrder);
-    const columnsWithLeads = Object.keys(groupedLeads)
-      .filter(status => groupedLeads[status].length > 0)
-      .map(normalizeEstado) // Normalizar todas las columnas
-      .filter((status, index, self) => self.indexOf(status) === index); // Eliminar duplicados
-    
-    // Filtrar explícitamente "Fríos" y "fríos"
-    const filteredColumns = columnsWithLeads.filter(status => 
-      status !== 'fríos' && status !== 'frios' && status !== 'tibios' && status !== 'calientes' && status !== 'llamadas' && status !== 'visitas'
-    );
-    
-    const customColumns = filteredColumns.filter(status => !visibleSet.has(status));
-    
-    // Primero las columnas visibles en orden, luego las personalizadas
-    return [...statusOrder, ...customColumns];
-  }, [statusOrder, groupedLeads]);
 
   const handleToggleSelectionMode = () => {
     const newMode = !isSelectionMode;
