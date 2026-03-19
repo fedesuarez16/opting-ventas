@@ -2,16 +2,15 @@
 
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import AppLayout from '../../components/AppLayout';
-import LeadCards from '../../components/LeadCards';
 import LeadFilter from '../../components/LeadFilter';
 import LeadEditSidebar from '../../components/LeadEditSidebar';
+import LeadDetailSidebar from '../../components/LeadDetailSidebar';
 import AgentStatusToggle from '../../components/AgentStatusToggle';
-import { Lead, FilterOptions, LeadStatus } from '../../types';
+import { Lead, FilterOptions } from '../../types';
 import {
   getAllOutboundLeads,
   filterOutboundLeads,
   getUniqueOutboundStatuses,
-  updateOutboundLeadStatus,
   updateOutboundLead,
   createOutboundLead,
 } from '../../services/leadOutboundService';
@@ -19,26 +18,33 @@ import { exportLeadsToCSV } from '../../utils/exportUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
-/** Columnas que se muestran por defecto en el Kanban outbound (puedes arrastrar leads a cualquiera) */
-const DEFAULT_OUTBOUND_COLUMNS = [
-  'active',
-  'respondio',
-  'llamada',
-  'no_contesta',
-  'cerrado',
-];
-
+const DEFAULT_OUTBOUND_COLUMNS = ['active', 'respondio', 'llamada', 'no_contesta', 'cerrado'];
 const DEFAULT_OUTBOUND_COLORS: Record<string, string> = {
   active: '#3b82f6',
   responded: '#10b981',
   llamada: '#8b5cf6',
-  visita: '#10b981',
   no_contesta: '#f59e0b',
   cerrado: '#6b7280',
 };
-
 function normalizeColumnName(col: string): string {
   return col.toLowerCase().trim();
+}
+
+function formatDateTime(value: string | undefined): string {
+  if (!value) return '—';
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
 }
 
 export default function LeadsOutboundPage() {
@@ -48,24 +54,18 @@ export default function LeadsOutboundPage() {
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const [zonas, setZonas] = useState<string[]>([]);
   const [estados, setEstados] = useState<string[]>([]);
   const [tiposPropiedad, setTiposPropiedad] = useState<string[]>([]);
   const [motivosInteres, setMotivosInteres] = useState<string[]>([]);
   const [propiedadesInteres, setPropiedadesInteres] = useState<string[]>([]);
-  const [showAllCampaigns, setShowAllCampaigns] = useState(false);
 
-  const [isEditSidebarOpen, setIsEditSidebarOpen] = useState(false);
   const [leadToEdit, setLeadToEdit] = useState<Lead | null>(null);
-
-  const [selectedLeads, setSelectedLeads] = useState<Lead[]>([]);
-  const [isAddingToSeguimientos, setIsAddingToSeguimientos] = useState(false);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedToque, setSelectedToque] = useState<number>(1);
-  const [showToqueSelector, setShowToqueSelector] = useState(false);
-
+  const [isEditSidebarOpen, setIsEditSidebarOpen] = useState(false);
+  const [leadForDetail, setLeadForDetail] = useState<Lead | null>(null);
+  const [isDetailSidebarOpen, setIsDetailSidebarOpen] = useState(false);
+  const [showAllCampaigns, setShowAllCampaigns] = useState(false);
   const [customColumns, setCustomColumns] = useState<string[]>([]);
   const [isAddColumnModalVisible, setIsAddColumnModalVisible] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
@@ -73,6 +73,8 @@ export default function LeadsOutboundPage() {
   const [isColumnSelectorVisible, setIsColumnSelectorVisible] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_OUTBOUND_COLUMNS);
   const [columnColors, setColumnColors] = useState<Record<string, string>>(DEFAULT_OUTBOUND_COLORS);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   useEffect(() => {
     const loadData = async () => {
@@ -83,7 +85,6 @@ export default function LeadsOutboundPage() {
       setFilteredLeads(allLeads);
       const statuses = getUniqueOutboundStatuses();
       setEstados(statuses);
-      // Mantener las columnas por defecto y agregar cualquier estado que venga de los datos
       if (statuses.length > 0) {
         setVisibleColumns((prev) => {
           const combined = [...new Set([...DEFAULT_OUTBOUND_COLUMNS, ...prev, ...statuses])];
@@ -99,95 +100,31 @@ export default function LeadsOutboundPage() {
     loadData();
   }, []);
 
-  const filteredLeadsMemo = useMemo(() => {
-    if (!Array.isArray(leads) || leads.length === 0) return [];
-    if (!filterOptions && !deferredSearchTerm) return leads;
-    let filtered = filterOutboundLeads(filterOptions ?? {});
-    if (!Array.isArray(filtered)) filtered = leads;
+  const filtered = useMemo(() => {
+    let out = filterOutboundLeads(filterOptions);
+    if (!Array.isArray(out)) return leads;
     if (deferredSearchTerm?.trim()) {
-      const searchLower = deferredSearchTerm.toLowerCase().trim();
-      const searchTrimmed = deferredSearchTerm.trim();
-      filtered = filtered.filter((lead) => {
-        const nombre = (lead.nombreCompleto || (lead as any).nombre || '').toLowerCase();
-        const telefono = String((lead as any).whatsapp_id ?? lead.telefono ?? lead.phone ?? '');
-        return nombre.includes(searchLower) || telefono.includes(searchTrimmed);
+      const q = deferredSearchTerm.toLowerCase().trim();
+      const qRaw = deferredSearchTerm.trim();
+      out = out.filter((l) => {
+        const name = (l.nombreCompleto || (l as any).nombre || '').toLowerCase();
+        const tel = String((l as any).phone ?? (l as any).whatsapp_id ?? l.telefono ?? '');
+        return name.includes(q) || tel.includes(qRaw);
       });
     }
-    return filtered;
+    return out;
   }, [leads, filterOptions, deferredSearchTerm]);
 
   useEffect(() => {
-    if (Array.isArray(filteredLeadsMemo)) setFilteredLeads(filteredLeadsMemo);
-  }, [filteredLeadsMemo]);
+    setFilteredLeads(filtered);
+  }, [filtered]);
 
-  const handleFilterChange = (newFilterOptions: FilterOptions) => setFilterOptions(newFilterOptions);
+  const handleFilterChange = (opts: FilterOptions) => setFilterOptions(opts);
   const handleResetFilters = () => {
     setFilterOptions({});
     setSearchTerm('');
   };
   const handleExportCSV = () => exportLeadsToCSV(filteredLeads, 'leads_outbound');
-  const toggleFilterVisibility = () => setIsFilterVisible(!isFilterVisible);
-
-  const handleLeadStatusChange = async (leadId: string, newStatus: LeadStatus) => {
-    try {
-      const normalizedStatus = normalizeColumnName(newStatus);
-      const success = await updateOutboundLeadStatus(leadId, normalizedStatus);
-      if (success) {
-        setLeads((prev) =>
-          prev.map((l) => (l.id === leadId ? { ...l, estado: normalizedStatus as LeadStatus } : l))
-        );
-        setFilteredLeads((prev) =>
-          prev.map((l) => (l.id === leadId ? { ...l, estado: normalizedStatus as LeadStatus } : l))
-        );
-        setEstados(getUniqueOutboundStatuses());
-      }
-    } catch (e) {
-      console.error('Error updating outbound lead status:', e);
-    }
-  };
-
-  const handleOpenNewLead = () => {
-    setLeadToEdit(null);
-    setIsEditSidebarOpen(true);
-  };
-  const handleOpenEditLead = (lead: Lead) => {
-    setLeadToEdit(lead);
-    setIsEditSidebarOpen(true);
-  };
-  const handleCloseEditSidebar = () => {
-    setIsEditSidebarOpen(false);
-    setLeadToEdit(null);
-  };
-  const handleSelectionChange = (leads: Lead[]) => setSelectedLeads(leads);
-
-  const handleAddColumn = () => {
-    const normalized = normalizeColumnName(newColumnName.trim().toLowerCase());
-    if (!newColumnName.trim() || visibleColumns.includes(normalized)) return;
-    setCustomColumns((c) => [...c, normalized]);
-    setVisibleColumns((v) => [...v, normalized]);
-    setColumnColors((c) => ({ ...c, [normalized]: newColumnColor }));
-    setNewColumnName('');
-    setNewColumnColor('#3b82f6');
-    setIsAddColumnModalVisible(false);
-  };
-  const handleDeleteCustomColumn = (columnName: string) => {
-    setCustomColumns((c) => c.filter((col) => col !== columnName));
-    setVisibleColumns((v) => v.filter((col) => col !== columnName));
-    setColumnColors((c) => {
-      const next = { ...c };
-      delete next[columnName];
-      return next;
-    });
-  };
-  const handleColumnToggle = (column: string) => {
-    setVisibleColumns((v) =>
-      v.includes(column) ? v.filter((c) => c !== column) : [...v, column]
-    );
-  };
-  const toggleColumnSelector = () => setIsColumnSelectorVisible(!isColumnSelectorVisible);
-
-  const allColumns = [...new Set([...visibleColumns, ...customColumns])];
-
   const handleSaveLead = async (leadData: Partial<Lead>) => {
     const phone = leadData.phone ?? leadData.telefono ?? '';
     const customer_name = leadData.nombreCompleto ?? leadData.nombre ?? '';
@@ -212,23 +149,48 @@ export default function LeadsOutboundPage() {
     }
   };
 
+  const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
+  const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
+  const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
+
+  const toggleColumnSelector = () => setIsColumnSelectorVisible((v) => !v);
+  const handleAddColumn = () => {
+    const normalized = normalizeColumnName(newColumnName.trim().toLowerCase());
+    if (!newColumnName.trim() || visibleColumns.includes(normalized)) return;
+    setCustomColumns((c) => [...c, normalized]);
+    setVisibleColumns((v) => [...v, normalized]);
+    setColumnColors((c) => ({ ...c, [normalized]: newColumnColor }));
+    setNewColumnName('');
+    setNewColumnColor('#3b82f6');
+    setIsAddColumnModalVisible(false);
+  };
+  const handleDeleteCustomColumn = (columnName: string) => {
+    setCustomColumns((c) => c.filter((col) => col !== columnName));
+    setVisibleColumns((v) => v.filter((col) => col !== columnName));
+    setColumnColors((c) => {
+      const next = { ...c };
+      delete next[columnName];
+      return next;
+    });
+  };
+  const allColumns = [...new Set([...visibleColumns, ...customColumns])];
+
   if (isLoading) {
     return (
       <AppLayout>
         <div className="mb-8">
           <div className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200 mb-6">
-            <div className="px-2 py-2">
-              <Skeleton className="h-4 w-64" />
-            </div>
+            <div className="px-2 py-2"><Skeleton className="h-4 w-64" /></div>
             <div className="px-6 py-2 flex justify-between items-center border-t border-gray-200">
               <Skeleton className="h-6 w-40" />
             </div>
           </div>
-          <div className="w-full overflow-x-auto pb-1">
-            <div className="flex gap-2 min-w-max pr-2">
-              {[1, 2, 3].map((col) => (
-                <div key={col} className="min-w-[240px] bg-slate-100 border-gray-400 rounded-xl h-64" />
-              ))}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mx-4 sm:mx-6">
+            <div className="p-2">
+              <Skeleton className="h-8 w-full mb-2" />
+              <Skeleton className="h-8 w-full mb-2" />
+              <Skeleton className="h-8 w-full mb-2" />
+              <Skeleton className="h-8 w-full" />
             </div>
           </div>
         </div>
@@ -264,14 +226,17 @@ export default function LeadsOutboundPage() {
               </ol>
             </nav>
           </div>
+
           <div className="px-6 py-2 flex justify-between items-center border-t border-gray-200">
             <div className="flex items-center space-x-4">
-              <h1 className="text-md font-semibold text-slate-800 tracking-tight">Tablero Outbound</h1>
-              {searchTerm && (
-                <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
-                  {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
-                </span>
-              )}
+              <div className="flex items-center space-x-2">
+                <h1 className="text-md font-semibold text-slate-800 tracking-tight">Tablero Outbound</h1>
+                {searchTerm && (
+                  <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                    {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -292,30 +257,31 @@ export default function LeadsOutboundPage() {
             </div>
             <div className="flex space-x-2">
               {!isSelectionMode ? (
-                <button onClick={() => setIsSelectionMode(true)} className="bg-black hover:bg-black text-white px-4 py-2 rounded-md text-sm font-semibold flex items-center justify-center shadow-sm">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                  Seleccionar
+                <button onClick={() => setIsSelectionMode(true)} className="p-2 rounded-lg flex items-center justify-center border bg-white/60 hover:bg-white border-gray-200 text-slate-700" title="Seleccionar">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                  <span className="ml-1 text-sm">Seleccionar</span>
                 </button>
               ) : (
-                <button onClick={() => { setIsSelectionMode(false); setSelectedLeads([]); }} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-md text-sm font-semibold">
+                <button onClick={() => setIsSelectionMode(false)} className="p-2 rounded-lg flex items-center justify-center border border-gray-300 text-gray-700 bg-gray-100" title="Cancelar">
                   Cancelar
                 </button>
               )}
               <AgentStatusToggle className="py-1 px-2 text-sm" />
-              <button onClick={() => setIsAddColumnModalVisible(true)} className="bg-gray-600 hover:bg-gray-700 px-3 py-2 text-white rounded-xl flex items-center justify-center" title="Agregar Columna">
+              <button onClick={() => setIsAddColumnModalVisible(true)} className="bg-gray-600 hover:bg-gray-700 px-3 py-0.5 text-white p-2 rounded-xl flex items-center justify-center" title="Agregar Columna">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               </button>
-              <button onClick={handleOpenNewLead} className="hover:bg-gray-800 p-2 rounded-xl text-black border border-gray-200 flex items-center justify-center" title="Nuevo Lead">
+              <button onClick={() => { setLeadToEdit(null); setIsEditSidebarOpen(true); }} className="hover:bg-gray-800 p-2 rounded-xl text-black border border-gray-200 flex items-center justify-center" title="Nuevo Lead">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               </button>
-              <button onClick={toggleColumnSelector} className={`p-2 rounded-xl flex items-center justify-center border ${isColumnSelectorVisible ? 'border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isColumnSelectorVisible ? 'Ocultar columnas' : 'Mostrar columnas'}>
+              <button onClick={toggleColumnSelector} className={`p-2 rounded-xl flex items-center justify-center border ${isColumnSelectorVisible ? ' border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isColumnSelectorVisible ? 'Ocultar columnas' : 'Mostrar columnas'}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
               </button>
-              <button onClick={toggleFilterVisibility} className={`p-2 rounded-lg flex items-center justify-center border ${isFilterVisible ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isFilterVisible ? 'Ocultar filtros' : 'Mostrar filtros'}>
+              <button onClick={() => setIsFilterVisible((v) => !v)} className={`p-2 rounded-lg flex items-center justify-center border ${isFilterVisible ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isFilterVisible ? 'Ocultar filtros' : 'Mostrar filtros'}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
               </button>
             </div>
           </div>
+
           {propiedadesInteres.length > 0 && (
             <div className="px-6 py-3 border-t border-gray-200 bg-white/70">
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -327,6 +293,7 @@ export default function LeadsOutboundPage() {
               </div>
             </div>
           )}
+
           <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isFilterVisible ? 'max-h-96' : 'max-h-0'}`}>
             <LeadFilter filterOptions={filterOptions} onFilterChange={handleFilterChange} zonas={zonas} estados={estados} tiposPropiedad={tiposPropiedad} motivosInteres={motivosInteres} propiedadesInteres={propiedadesInteres} onResetFilters={handleResetFilters} />
           </div>
@@ -337,11 +304,11 @@ export default function LeadsOutboundPage() {
                 {allColumns.map((column) => (
                   <div key={column} className="flex items-center justify-between">
                     <label className="flex items-center space-x-2 cursor-pointer flex-1">
-                      <input type="checkbox" checked={visibleColumns.includes(column)} onChange={() => handleColumnToggle(column)} className="rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
+                      <input type="checkbox" checked={visibleColumns.includes(column)} readOnly className="rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
                       <span className="text-sm text-gray-700 capitalize">{column}</span>
                     </label>
                     {customColumns.includes(column) && (
-                      <button onClick={() => handleDeleteCustomColumn(column)} className="text-xs text-red-600 hover:text-red-800">Eliminar</button>
+                      <button type="button" onClick={() => handleDeleteCustomColumn(column)} className="text-xs text-red-600 hover:text-red-800">Eliminar</button>
                     )}
                   </div>
                 ))}
@@ -349,43 +316,164 @@ export default function LeadsOutboundPage() {
             </div>
           </div>
         </div>
+
         <div className="bg-white px-2 mb-8 overflow-hidden">
-          <LeadCards
-            leads={filteredLeads}
-            onLeadStatusChange={handleLeadStatusChange}
-            onEditLead={handleOpenEditLead}
-            visibleColumns={visibleColumns}
-            columnColors={columnColors}
-            onSelectionChange={handleSelectionChange}
-            selectedLeadIds={new Set(selectedLeads.map((l) => l.id))}
-            isSelectionMode={isSelectionMode}
-            onSelectionModeChange={(enabled) => { setIsSelectionMode(enabled); if (!enabled) setSelectedLeads([]); }}
-          />
+          <div className="mx-1 sm:mx-2 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Nombre
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Teléfono
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Fecha/Hora Contacto
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Etiqueta
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Última conversación
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Acción
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500 text-sm">
+                      No hay leads outbound. Ajustá los filtros o agregá un nuevo lead.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeads.map((lead) => (
+                    <tr key={lead.id} className="hover:bg-gray-50/80">
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {getNombre(lead)}
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                        {getPhone(lead) || '—'}
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                        {formatDateTime(lead.fechaContacto || lead.created_at)}
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <span className="inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800 capitalize">
+                          {lead.estado || '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
+                        {getEtiqueta(lead)}
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                        {formatDateTime((lead as any).ultima_interaccion)}
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
+                        <span className="inline-flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeadForDetail(lead);
+                              setIsDetailSidebarOpen(true);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            Ver perfil
+                          </button>
+                          <Link
+                            href={`/chat?phoneNumber=${encodeURIComponent(getPhone(lead).replace(/^\++/, ''))}`}
+                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            Ver chat
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeadToEdit(lead);
+                              setIsEditSidebarOpen(true);
+                            }}
+                            className="text-gray-600 hover:text-gray-800 font-medium"
+                          >
+                            Editar
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          </div>
         </div>
+      </div>
+
+        {/* Modal para agregar columnas */}
         {isAddColumnModalVisible && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Agregar columna</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Agregar Nueva Columna</h3>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
-                <input value={newColumnName} onChange={(e) => setNewColumnName(e.target.value)} placeholder="Ej: responded" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500" onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()} />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de la columna</label>
+                <input
+                  type="text"
+                  value={newColumnName}
+                  onChange={(e) => setNewColumnName(e.target.value)}
+                  placeholder="Ej: seguimiento, negociación, etc."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddColumn()}
+                />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Color de la columna</label>
                 <div className="flex items-center gap-3">
                   <input type="color" value={newColumnColor} onChange={(e) => setNewColumnColor(e.target.value)} className="h-10 w-20 border border-gray-300 rounded-md cursor-pointer" />
-                  <input value={newColumnColor} onChange={(e) => setNewColumnColor(e.target.value)} className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm font-mono" />
+                  <input type="text" value={newColumnColor} onChange={(e) => setNewColumnColor(e.target.value)} placeholder="#3b82f6" className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm font-mono" />
                 </div>
+                <p className="text-xs text-gray-500 mt-1">Selecciona un color para los badges de esta columna</p>
               </div>
               <div className="flex justify-end space-x-3">
                 <button onClick={() => { setIsAddColumnModalVisible(false); setNewColumnName(''); setNewColumnColor('#3b82f6'); }} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">Cancelar</button>
-                <button onClick={handleAddColumn} disabled={!newColumnName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 rounded-md disabled:opacity-50">Agregar</button>
+                <button onClick={handleAddColumn} disabled={!newColumnName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed">Agregar</button>
               </div>
             </div>
           </div>
         )}
-      </div>
-      <LeadEditSidebar lead={leadToEdit} isOpen={isEditSidebarOpen} onClose={handleCloseEditSidebar} onSave={handleSaveLead} />
+
+      <LeadDetailSidebar
+        lead={leadForDetail}
+        onClose={() => {
+          setIsDetailSidebarOpen(false);
+          setLeadForDetail(null);
+        }}
+        matchingProperties={[]}
+        isOpen={isDetailSidebarOpen}
+        onEditLead={(lead) => {
+          setLeadToEdit(lead);
+          setIsDetailSidebarOpen(false);
+          setLeadForDetail(null);
+          setIsEditSidebarOpen(true);
+        }}
+        columnColors={columnColors}
+      />
+
+      <LeadEditSidebar
+        lead={leadToEdit}
+        isOpen={isEditSidebarOpen}
+        onClose={() => {
+          setIsEditSidebarOpen(false);
+          setLeadToEdit(null);
+        }}
+        onSave={handleSaveLead}
+      />
     </AppLayout>
   );
 }

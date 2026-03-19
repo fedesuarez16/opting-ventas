@@ -581,6 +581,23 @@ export default function LeadsKanbanPage() {
             </nav>
           </div>
 
+          {/* Solapas: Kanban | Tabla */}
+          <div className="px-6 pt-1 border-t border-gray-200 flex gap-1">
+            <Link
+              href="/leads"
+              className="px-4 py-2.5 text-sm font-medium rounded-t-lg border border-b-0 border-gray-200 bg-white text-slate-800 shadow-sm -mb-px"
+              aria-current="page"
+            >
+              Tablero Kanban
+            </Link>
+            <Link
+              href="/leads/tabla"
+              className="px-4 py-2.5 text-sm font-medium rounded-t-lg border border-transparent border-b-0 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            >
+              Tabla
+            </Link>
+          </div>
+
           {/* Título y acciones */}
           <div className="px-6 py-2  flex justify-between items-center border-t border-gray-200">
             <div className="flex items-center space-x-4">
