@@ -107,8 +107,8 @@ export function getUniqueOutboundStatuses(): string[] {
 /** Actualiza el estado de un lead en leads_outbound */
 export async function updateOutboundLeadStatus(leadId: string, newStatus: string): Promise<boolean> {
   try {
-    const { error } = await getSupabase()
-      .from('leads_outbound')
+    const qb = getSupabase().from('leads_outbound') as any;
+    const { error } = await qb
       .update({ estado: newStatus, updated_at: new Date().toISOString() })
       .eq('id', leadId);
 
@@ -133,8 +133,8 @@ export async function updateOutboundLead(leadId: string, data: { customer_name?:
     if (data.customer_name !== undefined) toUpdate.customer_name = data.customer_name;
     if (data.phone !== undefined) toUpdate.phone = data.phone;
 
-    const { data: updated, error } = await getSupabase()
-      .from('leads_outbound')
+    const qb = getSupabase().from('leads_outbound') as any;
+    const { data: updated, error } = await qb
       .update(toUpdate)
       .eq('id', leadId)
       .select()
@@ -164,8 +164,8 @@ export async function createOutboundLead(data: { phone: string; customer_name?: 
       respondio: false,
       estado: 'active',
     };
-    const { data: inserted, error } = await getSupabase()
-      .from('leads_outbound')
+    const qb = getSupabase().from('leads_outbound') as any;
+    const { data: inserted, error } = await qb
       .insert([row])
       .select()
       .single();
