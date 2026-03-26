@@ -152,6 +152,33 @@ export default function LeadsOutboundPage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
+  const getLeadQuality = (l: Lead): number => {
+    const raw =
+      (l as any).calidad ??
+      (l as any).calidad_lead ??
+      (l as any).lead_quality ??
+      (l as any).quality ??
+      (l as any).rating ??
+      (l as any).estrellas ??
+      (l as any).stars ??
+      (l as any).score;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    const clamped = Math.max(0, Math.min(3, Math.trunc(n)));
+    return clamped;
+  };
+  const renderQualityStars = (l: Lead) => {
+    const q = getLeadQuality(l);
+    return (
+      <span className="inline-flex items-center gap-0.5" aria-label={`Calidad ${q}/3`}>
+        {[1, 2, 3].map((i) => (
+          <span key={i} className={i <= q ? 'text-yellow-500' : 'text-gray-300'}>
+            ★
+          </span>
+        ))}
+      </span>
+    );
+  };
 
   const toggleColumnSelector = () => setIsColumnSelectorVisible((v) => !v);
   const handleAddColumn = () => {
@@ -257,12 +284,12 @@ export default function LeadsOutboundPage() {
             </div>
             <div className="flex space-x-2">
               {!isSelectionMode ? (
-                <button onClick={() => setIsSelectionMode(true)} className="p-2 rounded-lg flex items-center justify-center border bg-white/60 hover:bg-white border-gray-200 text-slate-700" title="Seleccionar">
+                <button onClick={() => setIsSelectionMode(true)} className="p-2 rounded-lg flex items-center justify-center border border-gray-200 bg-white/60 hover:bg-white text-slate-700" title="Seleccionar">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                   <span className="ml-1 text-sm">Seleccionar</span>
                 </button>
               ) : (
-                <button onClick={() => setIsSelectionMode(false)} className="p-2 rounded-lg flex items-center justify-center border border-gray-300 text-gray-700 bg-gray-100" title="Cancelar">
+                <button onClick={() => setIsSelectionMode(false)} className="p-2 rounded-lg flex items-center justify-center border border-gray-300 text-gray-700 bg-gray-100 hover:bg-gray-200" title="Cancelar">
                   Cancelar
                 </button>
               )}
@@ -270,10 +297,10 @@ export default function LeadsOutboundPage() {
               <button onClick={() => setIsAddColumnModalVisible(true)} className="bg-gray-600 hover:bg-gray-700 px-3 py-0.5 text-white p-2 rounded-xl flex items-center justify-center" title="Agregar Columna">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               </button>
-              <button onClick={() => { setLeadToEdit(null); setIsEditSidebarOpen(true); }} className="hover:bg-gray-800 p-2 rounded-xl text-black border border-gray-200 flex items-center justify-center" title="Nuevo Lead">
+              <button onClick={() => { setLeadToEdit(null); setIsEditSidebarOpen(true); }} className="hover:bg-gray-100 p-2 rounded-xl text-black border border-gray-200 flex items-center justify-center" title="Nuevo Lead">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               </button>
-              <button onClick={toggleColumnSelector} className={`p-2 rounded-xl flex items-center justify-center border ${isColumnSelectorVisible ? ' border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isColumnSelectorVisible ? 'Ocultar columnas' : 'Mostrar columnas'}>
+              <button onClick={toggleColumnSelector} className={`p-2 rounded-xl flex items-center justify-center border ${isColumnSelectorVisible ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isColumnSelectorVisible ? 'Ocultar columnas' : 'Mostrar columnas'}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
               </button>
               <button onClick={() => setIsFilterVisible((v) => !v)} className={`p-2 rounded-lg flex items-center justify-center border ${isFilterVisible ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-white/60 hover:bg-white border-gray-200 text-slate-700'}`} title={isFilterVisible ? 'Ocultar filtros' : 'Mostrar filtros'}>
@@ -339,7 +366,7 @@ export default function LeadsOutboundPage() {
                     Etiqueta
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Última conversación
+                    Calidad
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Acción
@@ -373,26 +400,34 @@ export default function LeadsOutboundPage() {
                       <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
                         {getEtiqueta(lead)}
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
-                        {formatDateTime((lead as any).ultima_interaccion)}
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm">
+                        {renderQualityStars(lead)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
-                        <span className="inline-flex gap-3">
+                        <span className="inline-flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
                               setLeadForDetail(lead);
                               setIsDetailSidebarOpen(true);
                             }}
-                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                            title="Ver perfil"
+                            aria-label="Ver perfil"
                           >
-                            Ver perfil
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
                           </button>
                           <Link
                             href={`/chat?phoneNumber=${encodeURIComponent(getPhone(lead).replace(/^\++/, ''))}`}
-                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 inline-flex"
+                            title="Ver chat"
+                            aria-label="Ver chat"
                           >
-                            Ver chat
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a10.4 10.4 0 01-4-.8L3 20l1.2-3.2A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
                           </Link>
                           <button
                             type="button"
@@ -400,9 +435,13 @@ export default function LeadsOutboundPage() {
                               setLeadToEdit(lead);
                               setIsEditSidebarOpen(true);
                             }}
-                            className="text-gray-600 hover:text-gray-800 font-medium"
+                            className="p-1.5 rounded-md text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                            title="Editar"
+                            aria-label="Editar"
                           >
-                            Editar
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
                           </button>
                         </span>
                       </td>
