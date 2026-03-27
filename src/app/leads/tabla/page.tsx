@@ -2,16 +2,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import AppLayout from '../../components/AppLayout';
-import LeadFilter from '../../components/LeadFilter';
 import LeadEditSidebar from '../../components/LeadEditSidebar';
-import { Lead, FilterOptions } from '../../types';
+import LeadDetailSidebar from '../../components/LeadDetailSidebar';
+import { Lead } from '../../types';
 import {
   getAllLeads,
-  getUniqueZones,
-  getUniqueStatuses,
-  getUniquePropertyTypes,
-  getUniqueInterestReasons,
-  getUniquePropertyInterests,
   updateLead,
 } from '../../services/leadService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
@@ -38,19 +33,13 @@ function formatDateTime(value: string | undefined): string {
 export default function LeadsTablePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({});
-  const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [zonas, setZonas] = useState<string[]>([]);
-  const [estados, setEstados] = useState<string[]>([]);
-  const [tiposPropiedad, setTiposPropiedad] = useState<string[]>([]);
-  const [motivosInteres, setMotivosInteres] = useState<string[]>([]);
-  const [propiedadesInteres, setPropiedadesInteres] = useState<string[]>([]);
-
   const [leadToEdit, setLeadToEdit] = useState<Lead | null>(null);
   const [isEditSidebarOpen, setIsEditSidebarOpen] = useState(false);
+  const [leadForDetail, setLeadForDetail] = useState<Lead | null>(null);
+  const [isDetailSidebarOpen, setIsDetailSidebarOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -58,11 +47,6 @@ export default function LeadsTablePage() {
       const data = await getAllLeads();
       setLeads(data);
       setFilteredLeads(data);
-      setZonas(getUniqueZones());
-      setEstados(getUniqueStatuses());
-      setTiposPropiedad(getUniquePropertyTypes());
-      setMotivosInteres(getUniqueInterestReasons());
-      setPropiedadesInteres(getUniquePropertyInterests());
       setIsLoading(false);
     };
     load();
@@ -70,18 +54,6 @@ export default function LeadsTablePage() {
 
   const filtered = useMemo(() => {
     let out = leads;
-    if (filterOptions.estado) {
-      out = out.filter((l) => (l.estado || '').toLowerCase() === (filterOptions.estado || '').toLowerCase());
-    }
-    if (filterOptions.zona) {
-      out = out.filter((l) => (l.zonaInteres || (l as any).zona || '').toLowerCase() === (filterOptions.zona || '').toLowerCase());
-    }
-    if (filterOptions.tipoPropiedad) {
-      out = out.filter((l) => (l.tipoPropiedad || (l as any).tipo_propiedad || '') === filterOptions.tipoPropiedad);
-    }
-    if (filterOptions.propiedadInteres) {
-      out = out.filter((l) => (l as any).propiedad_interes === filterOptions.propiedadInteres);
-    }
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
       const qRaw = searchTerm.trim();
@@ -93,17 +65,12 @@ export default function LeadsTablePage() {
       });
     }
     return out;
-  }, [leads, filterOptions, searchTerm]);
+  }, [leads, searchTerm]);
 
   useEffect(() => {
     setFilteredLeads(filtered);
   }, [filtered]);
 
-  const handleFilterChange = (opts: FilterOptions) => setFilterOptions(opts);
-  const handleResetFilters = () => {
-    setFilterOptions({});
-    setSearchTerm('');
-  };
   const handleExportCSV = () => exportLeadsToCSV(filteredLeads, 'leads');
   const handleSaveLead = async (data: Partial<Lead>) => {
     if (!leadToEdit) return;
@@ -118,6 +85,32 @@ export default function LeadsTablePage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
+  const getLeadQuality = (l: Lead): number => {
+    const raw =
+      (l as any).calidad ??
+      (l as any).calidad_lead ??
+      (l as any).lead_quality ??
+      (l as any).quality ??
+      (l as any).rating ??
+      (l as any).estrellas ??
+      (l as any).stars ??
+      (l as any).score;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(3, Math.trunc(n)));
+  };
+  const renderQualityStars = (l: Lead) => {
+    const q = getLeadQuality(l);
+    return (
+      <span className="inline-flex items-center gap-0.5" aria-label={`Calidad ${q}/3`}>
+        {[1, 2, 3].map((i) => (
+          <span key={i} className={i <= q ? 'text-yellow-500' : 'text-gray-300'}>
+            ★
+          </span>
+        ))}
+      </span>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -154,23 +147,10 @@ export default function LeadsTablePage() {
                 </li>
                 <li>
                   <span className="mx-1 text-gray-400">/</span>
-                  <Link href="/leads" className="text-sm font-medium text-gray-700 hover:text-indigo-600">Leads</Link>
-                </li>
-                <li>
-                  <span className="mx-1 text-gray-400">/</span>
-                  <span className="text-sm font-medium text-indigo-600">Tabla</span>
+                  <span className="text-sm font-medium text-indigo-600" aria-current="page">Leads</span>
                 </li>
               </ol>
             </nav>
-          </div>
-
-          <div className="px-6 pt-1 flex gap-1 border-t border-gray-200">
-            <Link href="/leads" className="px-4 py-2.5 text-sm font-medium rounded-t-lg border border-transparent border-b-0 text-gray-500 hover:text-gray-700 hover:bg-gray-50">
-              Tablero Kanban
-            </Link>
-            <span className="px-4 py-2.5 text-sm font-medium rounded-t-lg border border-b-0 border-gray-200 bg-white text-slate-800 shadow-sm -mb-px">
-              Tabla
-            </span>
           </div>
 
           <div className="px-6 py-3 flex justify-between items-center border-t border-gray-100 flex-wrap gap-3">
@@ -196,31 +176,14 @@ export default function LeadsTablePage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsFilterVisible((v) => !v)}
-                className={`px-3 py-2 text-sm font-medium rounded-lg border ${isFilterVisible ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                type="button"
+                onClick={handleExportCSV}
+                className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
               >
-                Filtros
-              </button>
-              <button onClick={handleExportCSV} className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
                 Exportar CSV
               </button>
             </div>
           </div>
-
-          {isFilterVisible && (
-            <div className="px-6 pb-4 border-t border-gray-100">
-              <LeadFilter
-                filterOptions={filterOptions}
-                onFilterChange={handleFilterChange}
-                zonas={zonas}
-                estados={estados}
-                tiposPropiedad={tiposPropiedad}
-                motivosInteres={motivosInteres}
-                propiedadesInteres={propiedadesInteres}
-                onResetFilters={handleResetFilters}
-              />
-            </div>
-          )}
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
@@ -244,7 +207,7 @@ export default function LeadsTablePage() {
                     Etiqueta
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Última conversación
+                    Calidad
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Acción
@@ -278,16 +241,34 @@ export default function LeadsTablePage() {
                       <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
                         {getEtiqueta(lead)}
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
-                        {formatDateTime((lead as any).ultima_interaccion)}
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm">
+                        {renderQualityStars(lead)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
-                        <span className="inline-flex gap-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeadForDetail(lead);
+                              setIsDetailSidebarOpen(true);
+                            }}
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                            title="Ver perfil"
+                            aria-label="Ver perfil"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          </button>
                           <Link
                             href={`/chat?phoneNumber=${encodeURIComponent(getPhone(lead).replace(/^\++/, ''))}`}
-                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 inline-flex"
+                            title="Ver chat"
+                            aria-label="Ver chat"
                           >
-                            Ver chat
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a10.4 10.4 0 01-4-.8L3 20l1.2-3.2A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
                           </Link>
                           <button
                             type="button"
@@ -295,9 +276,13 @@ export default function LeadsTablePage() {
                               setLeadToEdit(lead);
                               setIsEditSidebarOpen(true);
                             }}
-                            className="text-gray-600 hover:text-gray-800 font-medium"
+                            className="p-1.5 rounded-md text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                            title="Editar"
+                            aria-label="Editar"
                           >
-                            Editar
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
                           </button>
                         </span>
                       </td>
@@ -318,6 +303,21 @@ export default function LeadsTablePage() {
           setLeadToEdit(null);
         }}
         onSave={handleSaveLead}
+      />
+      <LeadDetailSidebar
+        lead={leadForDetail}
+        onClose={() => {
+          setIsDetailSidebarOpen(false);
+          setLeadForDetail(null);
+        }}
+        matchingProperties={[]}
+        isOpen={isDetailSidebarOpen}
+        onEditLead={(lead) => {
+          setLeadToEdit(lead);
+          setIsDetailSidebarOpen(false);
+          setLeadForDetail(null);
+          setIsEditSidebarOpen(true);
+        }}
       />
     </AppLayout>
   );
