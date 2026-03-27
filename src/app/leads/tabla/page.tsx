@@ -10,6 +10,7 @@ import {
   updateLead,
 } from '../../services/leadService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
+import { getLeadEstadoPillClass } from '../../utils/leadEstadoBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -79,6 +80,8 @@ export default function LeadsTablePage() {
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setFilteredLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setLeadToEdit(updated);
+    } else {
+      alert('No se pudo guardar. Revisá el teléfono (único) y los datos.');
     }
   };
 
@@ -115,7 +118,7 @@ export default function LeadsTablePage() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="mb-8 mx-4 sm:mx-6">
+        <div className="mb-8 mx-1 sm:mx-1">
           <div className="bg-white border border-gray-200 rounded-lg mb-4 px-4 sm:px-6 py-4">
             <Skeleton className="h-4 w-48 mb-2" />
             <Skeleton className="h-10 w-64" />
@@ -135,8 +138,8 @@ export default function LeadsTablePage() {
 
   return (
     <AppLayout>
-      <div className="mb-8 mx-4 sm:mx-6">
-        <div className="bg-white shadow-sm border border-gray-200 rounded-lg mb-4 px-4 sm:px-6">
+      <div className="mb-8 mx-4 sm:mx-1">
+        <div className="bg-white shadow-sm border border-gray-200 rounded-lg mb-4 px-4 sm:px-2">
           <div className="px-4 py-2">
             <nav className="flex" aria-label="Breadcrumb">
               <ol className="inline-flex items-center space-x-1 md:space-x-3">
@@ -234,7 +237,9 @@ export default function LeadsTablePage() {
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800 capitalize">
+                        <span
+                          className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)}`}
+                        >
                           {lead.estado || '—'}
                         </span>
                       </td>
@@ -303,6 +308,7 @@ export default function LeadsTablePage() {
           setLeadToEdit(null);
         }}
         onSave={handleSaveLead}
+        variant="leads-table"
       />
       <LeadDetailSidebar
         lead={leadForDetail}

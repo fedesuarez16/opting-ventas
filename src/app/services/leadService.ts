@@ -256,6 +256,11 @@ const mapLeadRow = (row: any): Lead => {
     caracteristicas_venta: row.caracteristicas_venta ?? undefined,
     propiedades_mostradas: row.propiedades_mostradas ?? undefined,
     propiedad_interes: row.propiedad_interes ?? undefined,
+    etiqueta: row.etiqueta != null && row.etiqueta !== '' ? String(row.etiqueta) : undefined,
+    calidad:
+      row.calidad != null && row.calidad !== ''
+        ? Math.max(0, Math.min(3, Math.trunc(Number(row.calidad))))
+        : undefined,
     ultima_interaccion: row.ultima_interaccion ?? undefined,
     created_at: row.created_at ?? undefined,
     updated_at: row.updated_at ?? undefined,
@@ -1024,56 +1029,66 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
     }
     
     console.log('✅ Lead encontrado antes de actualizar:', currentLead);
-    
-    // Preparar datos para actualizar según la estructura real de la tabla
+
+    // Solo columnas de public.leads (evita fallar si no existen presupuesto, zona, whatsapp_id, etc.)
     const dataToUpdate: any = {};
-    
-    // Solo incluir campos que existen en la tabla y se proporcionaron
-    if (leadData.nombreCompleto !== undefined) {
-      dataToUpdate.nombre = leadData.nombreCompleto;
+
+    if (leadData.nombreCompleto !== undefined || (leadData as any).nombre !== undefined) {
+      const v = leadData.nombreCompleto ?? (leadData as any).nombre;
+      dataToUpdate.nombre = v === '' || v === null ? null : String(v);
     }
-    if (leadData.telefono !== undefined) {
-      dataToUpdate.whatsapp_id = leadData.telefono;
+
+    if (leadData.telefono !== undefined || (leadData as any).phone !== undefined) {
+      const raw = String((leadData as any).phone ?? leadData.telefono ?? '').trim();
+      if (raw !== '') {
+        const digits = raw.replace(/\D/g, '');
+        dataToUpdate.phone = digits ? `+${digits}` : raw;
+      }
     }
-    if (leadData.presupuesto !== undefined) {
-      dataToUpdate.presupuesto = leadData.presupuesto;
+
+    if (leadData.created_at !== undefined) {
+      dataToUpdate.created_at = leadData.created_at;
+    } else if (leadData.fechaContacto !== undefined) {
+      dataToUpdate.created_at = leadData.fechaContacto;
     }
-    if (leadData.zonaInteres !== undefined) {
-      dataToUpdate.zona = leadData.zonaInteres;
+
+    if ((leadData as any).phone_from !== undefined) {
+      const v = (leadData as any).phone_from;
+      dataToUpdate.phone_from = v === '' || v === null ? null : String(v);
     }
-    if (leadData.tipoPropiedad !== undefined) {
-      dataToUpdate.tipo_propiedad = leadData.tipoPropiedad;
+    if ((leadData as any).mensaje_inicial !== undefined) {
+      dataToUpdate.mensaje_inicial = (leadData as any).mensaje_inicial;
     }
-    if (leadData.motivoInteres !== undefined) {
-      dataToUpdate.intencion = leadData.motivoInteres;
+    if ((leadData as any).wamid !== undefined) {
+      dataToUpdate.wamid = (leadData as any).wamid;
     }
-    if (leadData.observaciones !== undefined) {
-      dataToUpdate.caracteristicas_buscadas = leadData.observaciones;
+    if ((leadData as any).waba_id !== undefined) {
+      dataToUpdate.waba_id = (leadData as any).waba_id;
     }
-    if (leadData.forma_pago !== undefined) {
-      dataToUpdate.forma_pago = leadData.forma_pago;
+    if ((leadData as any).tipo_mensaje !== undefined) {
+      dataToUpdate.tipo_mensaje = (leadData as any).tipo_mensaje;
     }
-    if (leadData.intencion !== undefined) {
-      dataToUpdate.intencion = leadData.intencion;
+    if ((leadData as any).timestamp_mensaje !== undefined) {
+      dataToUpdate.timestamp_mensaje = (leadData as any).timestamp_mensaje;
     }
-    if (leadData.caracteristicas_buscadas !== undefined) {
-      dataToUpdate.caracteristicas_buscadas = leadData.caracteristicas_buscadas;
+    if ((leadData as any).dentro_horario !== undefined) {
+      dataToUpdate.dentro_horario = (leadData as any).dentro_horario;
     }
-    if (leadData.caracteristicas_venta !== undefined) {
-      dataToUpdate.caracteristicas_venta = leadData.caracteristicas_venta;
+
+    if ((leadData as any).etiqueta !== undefined) {
+      const v = (leadData as any).etiqueta;
+      dataToUpdate.etiqueta = v === null || v === '' ? null : String(v);
     }
-    if (leadData.propiedades_mostradas !== undefined) {
-      dataToUpdate.propiedades_mostradas = leadData.propiedades_mostradas;
+    if ((leadData as any).calidad !== undefined) {
+      const c = (leadData as any).calidad;
+      if (c === null || c === '') {
+        dataToUpdate.calidad = null;
+      } else {
+        const n = Math.trunc(Number(c));
+        dataToUpdate.calidad = Number.isFinite(n) && n >= 1 && n <= 3 ? n : null;
+      }
     }
-    if (leadData.propiedad_interes !== undefined) {
-      dataToUpdate.propiedad_interes = leadData.propiedad_interes;
-    }
-    if (leadData.seguimientos_count !== undefined) {
-      dataToUpdate.seguimientos_count = leadData.seguimientos_count;
-    }
-    if (leadData.notas !== undefined) {
-      dataToUpdate.notas = leadData.notas;
-    }
+
     if (leadData.estado_chat !== undefined) {
       // Asegurar que estado_chat sea un número entero (0 o 1)
       const estadoChatValue = leadData.estado_chat;
@@ -1121,6 +1136,10 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
     // Si el estado actual es válido y no se especifica un nuevo estado, NO cambiar el estado
     
     // NOTA: ultima_interaccion no existe en la tabla leads, no se actualiza
+
+    if (Object.keys(dataToUpdate).length === 0) {
+      return mapLeadRow(currentLead);
+    }
     
     console.log('📝 Datos a actualizar:', dataToUpdate);
     

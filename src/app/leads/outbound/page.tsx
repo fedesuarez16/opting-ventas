@@ -15,6 +15,7 @@ import {
   createOutboundLead,
 } from '../../services/leadOutboundService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
+import { getLeadEstadoPillClass } from '../../utils/leadEstadoBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -393,7 +394,9 @@ export default function LeadsOutboundPage() {
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800 capitalize">
+                        <span
+                          className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)}`}
+                        >
                           {lead.estado || '—'}
                         </span>
                       </td>

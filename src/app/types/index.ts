@@ -38,6 +38,10 @@ export interface Lead {
   notas?: string;
   estado_chat?: number; // Estado del chat: 1 = activo, 0 = inactivo (independiente del estado del lead)
   chatwoot_conversation_id?: number; // ID de la conversación en Chatwoot para calificación automática
+  /** Columna opcional en public.leads */
+  etiqueta?: string | null;
+  /** Calidad del lead 1–3 (columna opcional en public.leads) */
+  calidad?: number | null;
 }
 
 export interface FilterOptions {
