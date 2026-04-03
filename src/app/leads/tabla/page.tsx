@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import AppLayout from '../../components/AppLayout';
 import LeadEditSidebar from '../../components/LeadEditSidebar';
 import LeadDetailSidebar from '../../components/LeadDetailSidebar';
@@ -10,7 +10,7 @@ import {
   updateLead,
 } from '../../services/leadService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
-import { getLeadEstadoPillClass } from '../../utils/leadEstadoBadge';
+import { getLeadEstadoPillClass, normalizeLeadEstadoKey } from '../../utils/leadEstadoBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -36,6 +36,28 @@ export default function LeadsTablePage() {
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  /** '' = todos; valores alineados con normalizeLeadEstadoKey */
+  const [filterEstado, setFilterEstado] = useState<string>('');
+  /** '' = todas; 1 | 2 | 3 = estrellas exactas en calidad */
+  const [filterCalidadStars, setFilterCalidadStars] = useState<string>('');
+
+  const statusOptions: string[] = ['frío', 'tibio', 'caliente', 'llamada', 'llamada realizada', 'lista de difusion'];
+  const estadoFilterOptions: { value: string; label: string }[] = [
+    { value: '', label: 'Todos los estados' },
+    { value: 'frío', label: 'Frío' },
+    { value: 'tibio', label: 'Tibio' },
+    { value: 'caliente', label: 'Caliente' },
+    { value: 'llamada', label: 'Llamada' },
+  ];
+  const calidadFilterOptions: { value: string; label: string }[] = [
+    { value: '', label: 'Todas las calidades' },
+    { value: '1', label: '1 estrella' },
+    { value: '2', label: '2 estrellas' },
+    { value: '3', label: '3 estrellas' },
+  ];
+  const [statusDropdownOpenFor, setStatusDropdownOpenFor] = useState<string | null>(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const statusDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const [leadToEdit, setLeadToEdit] = useState<Lead | null>(null);
   const [isEditSidebarOpen, setIsEditSidebarOpen] = useState(false);
@@ -53,6 +75,31 @@ export default function LeadsTablePage() {
     load();
   }, []);
 
+  const getLeadQuality = (l: Lead): number => {
+    const raw =
+      (l as any).calidad ??
+      (l as any).calidad_lead ??
+      (l as any).lead_quality ??
+      (l as any).quality ??
+      (l as any).rating ??
+      (l as any).estrellas ??
+      (l as any).stars ??
+      (l as any).score;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(3, Math.trunc(n)));
+  };
+
+  const matchesEstadoFilter = (lead: Lead, selected: string): boolean => {
+    if (!selected) return true;
+    const want = normalizeLeadEstadoKey(selected);
+    const leadKey = normalizeLeadEstadoKey(lead.estado);
+    if (want === 'llamada') {
+      return leadKey === 'llamada' || leadKey === 'llamada realizada';
+    }
+    return leadKey === want;
+  };
+
   const filtered = useMemo(() => {
     let out = leads;
     if (searchTerm.trim()) {
@@ -65,8 +112,17 @@ export default function LeadsTablePage() {
         return name.includes(q) || tel.includes(qRaw) || email.includes(q);
       });
     }
+    if (filterEstado) {
+      out = out.filter((l) => matchesEstadoFilter(l, filterEstado));
+    }
+    if (filterCalidadStars) {
+      const n = Number(filterCalidadStars);
+      if (Number.isFinite(n)) {
+        out = out.filter((l) => getLeadQuality(l) === n);
+      }
+    }
     return out;
-  }, [leads, searchTerm]);
+  }, [leads, searchTerm, filterEstado, filterCalidadStars]);
 
   useEffect(() => {
     setFilteredLeads(filtered);
@@ -85,23 +141,39 @@ export default function LeadsTablePage() {
     }
   };
 
+  useEffect(() => {
+    if (!statusDropdownOpenFor) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!statusDropdownRef.current) return;
+      const target = e.target as Node;
+      if (!statusDropdownRef.current.contains(target)) {
+        setStatusDropdownOpenFor(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [statusDropdownOpenFor]);
+
+  const handleUpdateEstado = async (leadId: string, estado: string) => {
+    setStatusUpdatingId(leadId);
+    try {
+      const updated = await updateLead(leadId, { estado });
+      if (updated) {
+        setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        setFilteredLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        setStatusDropdownOpenFor(null);
+      } else {
+        alert('Error al actualizar el estado del lead.');
+      }
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
-  const getLeadQuality = (l: Lead): number => {
-    const raw =
-      (l as any).calidad ??
-      (l as any).calidad_lead ??
-      (l as any).lead_quality ??
-      (l as any).quality ??
-      (l as any).rating ??
-      (l as any).estrellas ??
-      (l as any).stars ??
-      (l as any).score;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(3, Math.trunc(n)));
-  };
   const renderQualityStars = (l: Lead) => {
     const q = getLeadQuality(l);
     return (
@@ -123,7 +195,7 @@ export default function LeadsTablePage() {
             <Skeleton className="h-4 w-48 mb-2" />
             <Skeleton className="h-10 w-64" />
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm">
             <div className="p-8">
               <Skeleton className="h-8 w-full mb-2" />
               <Skeleton className="h-8 w-full mb-2" />
@@ -159,7 +231,7 @@ export default function LeadsTablePage() {
           <div className="px-6 py-3 flex justify-between items-center border-t border-gray-100 flex-wrap gap-3">
             <div className="flex items-center gap-4 flex-wrap">
               <h1 className="text-xl font-bold text-slate-800">Tabla de Leads</h1>
-              {searchTerm && (
+              {(searchTerm || filterEstado || filterCalidadStars) && (
                 <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
                   {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
                 </span>
@@ -176,6 +248,36 @@ export default function LeadsTablePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Estado</span>
+                <select
+                  value={filterEstado}
+                  onChange={(e) => setFilterEstado(e.target.value)}
+                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[140px]"
+                  aria-label="Filtrar por estado"
+                >
+                  {estadoFilterOptions.map((opt) => (
+                    <option key={opt.value || 'all'} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Calidad</span>
+                <select
+                  value={filterCalidadStars}
+                  onChange={(e) => setFilterCalidadStars(e.target.value)}
+                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[160px]"
+                  aria-label="Filtrar por estrellas de calidad"
+                >
+                  {calidadFilterOptions.map((opt) => (
+                    <option key={opt.value || 'all-cal'} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -189,8 +291,8 @@ export default function LeadsTablePage() {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -237,11 +339,44 @@ export default function LeadsTablePage() {
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span
-                          className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)}`}
-                        >
-                          {lead.estado || '—'}
-                        </span>
+                        <div className="relative inline-block">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStatusDropdownOpenFor((cur) => (cur === lead.id ? null : lead.id))
+                            }
+                            disabled={!!statusUpdatingId && statusUpdatingId !== lead.id}
+                            className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)} cursor-pointer select-none`}
+                            aria-haspopup="listbox"
+                            aria-expanded={statusDropdownOpenFor === lead.id}
+                            title="Cambiar estado"
+                          >
+                            {lead.estado || '—'}
+                          </button>
+
+                          {statusDropdownOpenFor === lead.id && (
+                            <div
+                              ref={statusDropdownRef}
+                              className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-72 overflow-y-auto"
+                              role="listbox"
+                              aria-label="Opciones de estado"
+                            >
+                              {statusOptions.map((opt) => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 whitespace-nowrap ${
+                                    opt === lead.estado ? 'bg-gray-100 font-medium' : ''
+                                  }`}
+                                  onClick={() => handleUpdateEstado(lead.id, opt)}
+                                  disabled={statusUpdatingId === lead.id}
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
                         {getEtiqueta(lead)}

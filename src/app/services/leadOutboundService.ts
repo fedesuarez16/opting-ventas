@@ -48,6 +48,12 @@ function mapOutboundRow(row: any): Lead {
     created_at: row.created_at ?? undefined,
     updated_at: row.updated_at ?? undefined,
     whatsapp_id: phone,
+    chat_activo:
+      row.chat_activo === 1 || row.chat_activo === '1'
+        ? 1
+        : row.chat_activo === 0 || row.chat_activo === '0'
+          ? 0
+          : undefined,
   } as Lead;
 }
 
@@ -102,6 +108,54 @@ export function getUniqueOutboundStatuses(): string[] {
     if (e) set.add(e);
   });
   return Array.from(set).sort();
+}
+
+/**
+ * Actualiza chat_activo en filas de leads_outbound cuyo phone coincide (mismo criterio que leads).
+ * No lanza si no hay filas; errores de red/DB se registran y retornan false.
+ */
+export async function updateOutboundLeadChatActivoByPhone(
+  phoneRaw: string | null | undefined,
+  chatActivo: 0 | 1
+): Promise<boolean> {
+  try {
+    const digits = String(phoneRaw || '')
+      .replace(/@s\.whatsapp\.net/gi, '')
+      .replace(/@c\.us/gi, '')
+      .replace(/^WAID:/i, '')
+      .replace(/^whatsapp:/i, '')
+      .replace(/\D/g, '');
+    if (!digits) {
+      console.warn('updateOutboundLeadChatActivoByPhone: sin dígitos en teléfono');
+      return false;
+    }
+    const v = chatActivo === 1 || String(chatActivo) === '1' ? 1 : 0;
+    const toUpdate = { chat_activo: v, updated_at: new Date().toISOString() };
+    // No usar .or(phone.eq.+digits): el "+" sin comillas rompe el parser de PostgREST (400).
+    const phoneVariants = [`+${digits}`, digits];
+    const qb = getSupabase().from('leads_outbound') as any;
+    const { data, error } = await qb.update(toUpdate).in('phone', phoneVariants).select('id');
+
+    if (error) {
+      console.error('Error updating leads_outbound.chat_activo:', error);
+      return false;
+    }
+    const rows = (data ?? []) as { id: string }[];
+    if (rows.length === 0) {
+      console.log(
+        'leads_outbound: ninguna fila con phone coincidente para chat_activo (no es error)'
+      );
+      return false;
+    }
+    cachedOutboundLeads = cachedOutboundLeads.map((l) => {
+      const ld = String(l.phone || l.telefono || '').replace(/\D/g, '');
+      return ld === digits ? { ...l, chat_activo: v } : l;
+    });
+    return true;
+  } catch (e) {
+    console.error('updateOutboundLeadChatActivoByPhone error:', e);
+    return false;
+  }
 }
 
 /** Actualiza el estado de un lead en leads_outbound */

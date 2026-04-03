@@ -3,7 +3,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { updateLead, getAllLeads, createLead, findLeadByPhone } from '../services/leadService';
+import { updateOutboundLeadChatActivoByPhone } from '../services/leadOutboundService';
 import { programarSeguimiento, getSeguimientosPendientes, eliminarMensajeProgramado, eliminarTodosSeguimientosPendientes, existeSeguimientoParaLead } from '../services/mensajeService';
+
+/**
+ * public.leads.chat_activo: 0 = chat activo, 1 = chat inactivo.
+ * Fallback a estado_chat solo si chat_activo no viene en el lead (datos viejos).
+ */
+function getChatActivoValue(lead) {
+  if (!lead) return 0;
+  if (lead.chat_activo !== undefined && lead.chat_activo !== null) {
+    return lead.chat_activo === 1 || lead.chat_activo === '1' ? 1 : 0;
+  }
+  if (lead.estado_chat !== undefined && lead.estado_chat !== null) {
+    return lead.estado_chat === 1 || lead.estado_chat === '1' ? 1 : 0;
+  }
+  return 0;
+}
+
+function isLeadChatActivo(lead) {
+  return getChatActivoValue(lead) === 0;
+}
 
 const ChatConversation = ({ conversation, onBack }) => {
   const { messages, loading, loadingMore, error, hasMore, refreshMessages, loadMoreMessages, sendMessage } = useChatMessages(conversation?.id);
@@ -143,7 +163,7 @@ const ChatConversation = ({ conversation, onBack }) => {
           const leadPhone = String(leadPhoneRaw).replace(/[^\d]/g, '');
           const matches = leadPhone === normalizedPhone;
           if (matches) {
-            console.log('✅ Lead encontrado en cache:', { id: l.id, phone: l.phone, whatsapp_id: l.whatsapp_id, estado_chat: l.estado_chat });
+            console.log('✅ Lead encontrado en cache:', { id: l.id, phone: l.phone, whatsapp_id: l.whatsapp_id, chat_activo: l.chat_activo });
           }
           return matches;
         }) || null;
@@ -158,12 +178,9 @@ const ChatConversation = ({ conversation, onBack }) => {
         }
 
         if (foundLead) {
-          // Asegurar que estado_chat esté normalizado (0 o 1)
-          // 0 o null/undefined = activo (por defecto)
-          // 1 = desactivado
-          const normalizedEstadoChat = (foundLead.estado_chat === 1 || foundLead.estado_chat === '1') ? 1 : 0;
-          console.log(`📊 estado_chat del lead: ${foundLead.estado_chat} -> normalizado a: ${normalizedEstadoChat} (0=activo, 1=desactivado)`);
-          foundLead.estado_chat = normalizedEstadoChat;
+          const normalized = getChatActivoValue(foundLead);
+          console.log(`📊 chat_activo del lead: raw chat_activo=${foundLead.chat_activo} estado_chat=${foundLead.estado_chat} -> ${normalized} (0=activo, 1=inactivo)`);
+          foundLead.chat_activo = normalized;
         }
 
         setLead(foundLead);
@@ -202,28 +219,37 @@ const ChatConversation = ({ conversation, onBack }) => {
     
     setIsTogglingChat(true);
     try {
-      // Lógica: 0 o null/undefined = activo (por defecto), 1 = desactivado
-      const currentEstadoChat = (lead.estado_chat === 1 || lead.estado_chat === '1') ? 1 : 0;
-      // Si está activo (0), cambiar a desactivado (1). Si está desactivado (1), cambiar a activo (0)
-      const newEstadoChat = currentEstadoChat === 0 ? 1 : 0;
-      
-      console.log(`🔄 Cambiando estado_chat de ${currentEstadoChat} (${currentEstadoChat === 0 ? 'activo' : 'desactivado'}) a ${newEstadoChat} (${newEstadoChat === 0 ? 'activo' : 'desactivado'}) para lead ID: ${lead.id}`);
+      const current = getChatActivoValue(lead);
+      const next = current === 0 ? 1 : 0;
+
+      console.log(`🔄 Cambiando chat_activo de ${current} (${current === 0 ? 'activo' : 'inactivo'}) a ${next} (${next === 0 ? 'activo' : 'inactivo'}) para lead ID: ${lead.id}`);
       console.log(`📋 Lead completo antes de actualizar:`, lead);
-      
-      // Asegurar que el ID sea string
+
       const leadId = String(lead.id);
-      const updatedLead = await updateLead(leadId, { estado_chat: newEstadoChat });
-      
+      const phoneForOutbound = lead.phone || lead.whatsapp_id || lead.telefono || '';
+
+      const [leadsResult, outboundResult] = await Promise.allSettled([
+        updateLead(leadId, { chat_activo: next }),
+        updateOutboundLeadChatActivoByPhone(phoneForOutbound, next),
+      ]);
+
+      if (leadsResult.status === 'rejected') {
+        console.error('❌ Error en actualización leads.chat_activo:', leadsResult.reason);
+      }
+      if (outboundResult.status === 'rejected') {
+        console.error('❌ Error en actualización leads_outbound.chat_activo:', outboundResult.reason);
+      }
+
+      const updatedLead =
+        leadsResult.status === 'fulfilled' ? leadsResult.value : null;
+
       if (updatedLead) {
         console.log(`✅ Lead actualizado exitosamente:`, updatedLead);
-        console.log(`✅ estado_chat en lead actualizado:`, updatedLead.estado_chat);
-        // Normalizar estado_chat: 0 o null/undefined = activo, 1 = desactivado
-        const normalizedEstadoChat = (updatedLead.estado_chat === 1 || updatedLead.estado_chat === '1') ? 1 : 0;
-        updatedLead.estado_chat = normalizedEstadoChat;
-        console.log(`✅ estado_chat normalizado a: ${normalizedEstadoChat} (0=activo, 1=desactivado)`);
-        // Actualizar el estado local con el lead actualizado
+        const normalized = getChatActivoValue(updatedLead);
+        updatedLead.chat_activo = normalized;
+        console.log(`✅ chat_activo normalizado a: ${normalized} (0=activo, 1=inactivo)`);
         setLead(updatedLead);
-        console.log(`✅ Chat ${newEstadoChat === 0 ? 'activado' : 'desactivado'} exitosamente`);
+        console.log(`✅ Chat ${next === 0 ? 'activado' : 'desactivado'} exitosamente`);
       } else {
         console.error('❌ updateLead retornó null o undefined');
         console.error('❌ Intentando recargar lead desde DB...');
@@ -257,11 +283,9 @@ const ChatConversation = ({ conversation, onBack }) => {
           
           if (foundLead) {
             console.log('✅ Lead encontrado y recargado desde DB:', foundLead);
-            console.log('✅ estado_chat del lead recargado:', foundLead.estado_chat);
-            // Normalizar estado_chat: 0 o null/undefined = activo, 1 = desactivado
-            const normalizedEstadoChat = (foundLead.estado_chat === 1 || foundLead.estado_chat === '1') ? 1 : 0;
-            foundLead.estado_chat = normalizedEstadoChat;
-            console.log(`✅ estado_chat normalizado a: ${normalizedEstadoChat} (0=activo, 1=desactivado)`);
+            const normalized = getChatActivoValue(foundLead);
+            foundLead.chat_activo = normalized;
+            console.log(`✅ chat_activo normalizado a: ${normalized} (0=activo, 1=inactivo)`);
             setLead(foundLead);
           } else {
             console.error('❌ No se encontró el lead con el número:', normalizedPhone);
@@ -1041,18 +1065,17 @@ const ChatConversation = ({ conversation, onBack }) => {
             {/* Botones de acciones del lead */}
             {lead && (
               <>
-                {/* Botón de activar/desactivar chat del lead */}
-                {/* Lógica: 0 o null/undefined = activo (por defecto), 1 = desactivado */}
+                {/* Botón chat_activo en DB: 0 = activo, 1 = inactivo */}
                 <button
                   type="button"
                   onClick={handleToggleChat}
                   disabled={isTogglingChat || isLoadingLead}
                   className={`inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors shadow-sm ${
-                    (lead.estado_chat === 0 || lead.estado_chat === null || lead.estado_chat === undefined)
+                    isLeadChatActivo(lead)
                       ? 'bg-green-500 text-white hover:bg-green-600 border border-green-600'
                       : 'bg-red-500 text-white hover:bg-red-600 border border-red-600'
                   } ${isTogglingChat || isLoadingLead ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={(lead.estado_chat === 0 || lead.estado_chat === null || lead.estado_chat === undefined) ? 'Click para desactivar el chat' : 'Click para activar el chat'}
+                  title={isLeadChatActivo(lead) ? 'Click para desactivar el chat' : 'Click para activar el chat'}
                 >
                   {isTogglingChat ? (
                     <>
@@ -1061,7 +1084,7 @@ const ChatConversation = ({ conversation, onBack }) => {
                     </>
                   ) : (
                     <>
-                      {(lead.estado_chat === 0 || lead.estado_chat === null || lead.estado_chat === undefined) ? (
+                      {isLeadChatActivo(lead) ? (
                         <>
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

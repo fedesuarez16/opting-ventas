@@ -36,7 +36,9 @@ export interface Lead {
   updated_at?: string;
   seguimientos_count?: number;
   notas?: string;
-  estado_chat?: number; // Estado del chat: 1 = activo, 0 = inactivo (independiente del estado del lead)
+  estado_chat?: number; // Legacy; preferir chat_activo
+  /** Columna public.leads.chat_activo: 0 = chat activo, 1 = chat inactivo */
+  chat_activo?: number;
   chatwoot_conversation_id?: number; // ID de la conversación en Chatwoot para calificación automática
   /** Columna opcional en public.leads */
   etiqueta?: string | null;

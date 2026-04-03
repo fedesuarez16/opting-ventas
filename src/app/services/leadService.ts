@@ -266,10 +266,17 @@ const mapLeadRow = (row: any): Lead => {
     updated_at: row.updated_at ?? undefined,
     seguimientos_count: row.seguimientos_count ?? 0,
     notas: row.notas ?? undefined,
-    // Normalizar estado_chat: debe ser 0 o 1 (número entero)
-    // Si es null, undefined, 1 o '1', se considera 1 (activo por defecto)
-    // Solo si es explícitamente 0 o '0', se considera inactivo
+    // estado_chat (legacy en algunos proyectos)
     estado_chat: (row.estado_chat === null || row.estado_chat === undefined || row.estado_chat === 1 || row.estado_chat === '1') ? 1 : 0,
+    // chat_activo: 0 = activo, 1 = inactivo (columna actual en DB)
+    chat_activo:
+      row.chat_activo === 1 || row.chat_activo === '1'
+        ? 1
+        : row.chat_activo === 0 || row.chat_activo === '0'
+          ? 0
+          : row.chat_activo == null && row.estado_chat != null
+            ? (row.estado_chat === 1 || row.estado_chat === '1' ? 1 : 0)
+            : 0,
     // chatwoot_conversation_id para calificación automática basada en mensajes
     chatwoot_conversation_id: row.chatwoot_conversation_id ?? undefined,
   };
@@ -811,6 +818,8 @@ export const createLead = async (leadData: Partial<Lead>): Promise<Lead | null> 
       phone: phone, // Campo requerido y único
       nombre: leadData.nombreCompleto || (leadData as any).nombre || leadData.nombre || null,
       estado: leadData.estado || 'frio', // Estado por defecto
+      chat_activo:
+        (leadData as any).chat_activo === 1 || (leadData as any).chat_activo === '1' ? 1 : 0,
       // Campos opcionales que pueden venir del leadData
       phone_from: (leadData as any).phone_from || null,
       mensaje_inicial: (leadData as any).mensaje_inicial || null,
@@ -1089,12 +1098,17 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
       }
     }
 
+    if ((leadData as any).chat_activo !== undefined) {
+      const v = (leadData as any).chat_activo;
+      dataToUpdate.chat_activo = (v === 1 || String(v) === '1') ? 1 : 0;
+      console.log(`📝 Actualizando chat_activo a: ${dataToUpdate.chat_activo} (0=activo, 1=inactivo)`);
+    }
     if (leadData.estado_chat !== undefined) {
-      // Asegurar que estado_chat sea un número entero (0 o 1)
+      // Legacy: sigue actualizando estado_chat si otro flujo lo envía
       const estadoChatValue = leadData.estado_chat;
       const estadoChatStr = String(estadoChatValue);
       dataToUpdate.estado_chat = (estadoChatValue === 1 || estadoChatStr === '1') ? 1 : 0;
-      console.log(`📝 Actualizando estado_chat a: ${dataToUpdate.estado_chat} (tipo: ${typeof dataToUpdate.estado_chat})`);
+      console.log(`📝 Actualizando estado_chat (legacy) a: ${dataToUpdate.estado_chat}`);
     }
     
     // Recalificar automáticamente si:
