@@ -51,6 +51,9 @@ export interface Lead {
   /** Flag etiqueta "presupuesto" en leads_outbound (columna boolean `presupuesto`) */
   presupuesto_etiqueta?: boolean;
   inspeccion?: boolean;
+  empleado?: boolean;
+  /** Dueño (columna BD `dueno`) */
+  dueno?: boolean;
 }
 
 export interface FilterOptions {

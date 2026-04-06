@@ -50,6 +50,13 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
     observaciones: '',
     etiqueta: '',
     calidad: undefined,
+    llamada_agendada: false,
+    llamar: false,
+    deriva_humano: false,
+    presupuesto_etiqueta: false,
+    inspeccion: false,
+    empleado: false,
+    dueno: false,
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -78,6 +85,13 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
         observaciones: lead.observaciones || '',
         etiqueta: (lead as any).etiqueta ?? lead.propiedad_interes ?? '',
         calidad: Number.isFinite(calNum as number) ? calNum : undefined,
+        llamada_agendada: lead.llamada_agendada === true,
+        llamar: lead.llamar === true,
+        deriva_humano: lead.deriva_humano === true,
+        presupuesto_etiqueta: lead.presupuesto_etiqueta === true,
+        inspeccion: lead.inspeccion === true,
+        empleado: lead.empleado === true,
+        dueno: lead.dueno === true,
       });
       setContactAtLocal(toDatetimeLocalValue(lead.created_at || lead.fechaContacto));
     } else {
@@ -96,6 +110,13 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
         observaciones: '',
         etiqueta: '',
         calidad: undefined,
+        llamada_agendada: false,
+        llamar: false,
+        deriva_humano: false,
+        presupuesto_etiqueta: false,
+        inspeccion: false,
+        empleado: false,
+        dueno: false,
       });
       setContactAtLocal(variant === 'leads-table' ? toDatetimeLocalValue(new Date().toISOString()) : '');
     }
@@ -147,6 +168,13 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
             formData.calidad != null && formData.calidad >= 1 && formData.calidad <= 3
               ? formData.calidad
               : null,
+          llamada_agendada: !!formData.llamada_agendada,
+          llamar: !!formData.llamar,
+          deriva_humano: !!formData.deriva_humano,
+          presupuesto_etiqueta: !!formData.presupuesto_etiqueta,
+          inspeccion: !!formData.inspeccion,
+          empleado: !!formData.empleado,
+          dueno: !!formData.dueno,
         };
         if (contactAtLocal) {
           const t = new Date(contactAtLocal);
@@ -185,7 +213,14 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
               if (c == null || c === '') return null;
               const n = Math.trunc(Number(c));
               return n >= 1 && n <= 3 ? n : null;
-            })()
+            })() ||
+          !!formData.llamada_agendada !== (lead.llamada_agendada === true) ||
+          !!formData.llamar !== (lead.llamar === true) ||
+          !!formData.deriva_humano !== (lead.deriva_humano === true) ||
+          !!formData.presupuesto_etiqueta !== (lead.presupuesto_etiqueta === true) ||
+          !!formData.inspeccion !== (lead.inspeccion === true) ||
+          !!formData.empleado !== (lead.empleado === true) ||
+          !!formData.dueno !== (lead.dueno === true)
         : JSON.stringify(formData) !== JSON.stringify({
             nombreCompleto: lead.nombreCompleto,
             email: lead.email,
@@ -351,6 +386,36 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
                         <SelectItem value="3">3 estrellas</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-sm font-medium text-foreground">Etiquetas (columnas)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Marcá las que correspondan; se guardan en la tabla de leads.
+                    </p>
+                    {(
+                      [
+                        ['llamada_agendada', 'Llamada agendada'],
+                        ['llamar', 'Llamar'],
+                        ['deriva_humano', 'Deriva humano'],
+                        ['presupuesto_etiqueta', 'Presupuesto'],
+                        ['inspeccion', 'Inspección'],
+                        ['empleado', 'Empleado'],
+                        ['dueno', 'Dueño'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label
+                        key={key}
+                        className="flex cursor-pointer items-center gap-3 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={!!formData[key]}
+                          onChange={(e) => handleChange(key, e.target.checked)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
                   </div>
                 </CardContent>
               </Card>

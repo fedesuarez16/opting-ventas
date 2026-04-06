@@ -13,3 +13,10 @@ comment on column public.leads.llamar is 'Etiqueta: llamar';
 comment on column public.leads.deriva_humano is 'Etiqueta: deriva humano';
 comment on column public.leads.presupuesto_etiqueta is 'Etiqueta presupuesto (flag); ver columna presupuesto para monto';
 comment on column public.leads.inspeccion is 'Etiqueta: inspección';
+
+alter table public.leads
+  add column if not exists empleado boolean not null default false,
+  add column if not exists dueno boolean not null default false;
+
+comment on column public.leads.empleado is 'Etiqueta: empleado';
+comment on column public.leads.dueno is 'Etiqueta: dueño';

@@ -285,6 +285,8 @@ const mapLeadRow = (row: any): Lead => {
     presupuesto_etiqueta:
       row.presupuesto_etiqueta === true || row.presupuesto_etiqueta === 'true',
     inspeccion: row.inspeccion === true || row.inspeccion === 'true',
+    empleado: row.empleado === true || row.empleado === 'true',
+    dueno: row.dueno === true || row.dueno === 'true',
   };
 };
 
@@ -1102,6 +1104,29 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
         const n = Math.trunc(Number(c));
         dataToUpdate.calidad = Number.isFinite(n) && n >= 1 && n <= 3 ? n : null;
       }
+    }
+
+    const boolEtiqueta = (v: unknown) => v === true || v === 'true' || v === 1 || v === '1';
+    if (leadData.llamada_agendada !== undefined) {
+      dataToUpdate.llamada_agendada = boolEtiqueta(leadData.llamada_agendada);
+    }
+    if (leadData.llamar !== undefined) {
+      dataToUpdate.llamar = boolEtiqueta(leadData.llamar);
+    }
+    if (leadData.deriva_humano !== undefined) {
+      dataToUpdate.deriva_humano = boolEtiqueta(leadData.deriva_humano);
+    }
+    if (leadData.presupuesto_etiqueta !== undefined) {
+      dataToUpdate.presupuesto_etiqueta = boolEtiqueta(leadData.presupuesto_etiqueta);
+    }
+    if (leadData.inspeccion !== undefined) {
+      dataToUpdate.inspeccion = boolEtiqueta(leadData.inspeccion);
+    }
+    if (leadData.empleado !== undefined) {
+      dataToUpdate.empleado = boolEtiqueta(leadData.empleado);
+    }
+    if (leadData.dueno !== undefined) {
+      dataToUpdate.dueno = boolEtiqueta(leadData.dueno);
     }
 
     if ((leadData as any).chat_activo !== undefined) {

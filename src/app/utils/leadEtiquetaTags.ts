@@ -7,6 +7,8 @@ export const LEAD_BOOLEAN_ETIQUETA_FIELDS: { field: keyof Lead; label: string }[
   { field: 'deriva_humano', label: 'Deriva humano' },
   { field: 'presupuesto_etiqueta', label: 'Presupuesto' },
   { field: 'inspeccion', label: 'Inspección' },
+  { field: 'empleado', label: 'Empleado' },
+  { field: 'dueno', label: 'Dueño' },
 ];
 
 export function getLeadBooleanEtiquetaLabels(lead: Lead): string[] {

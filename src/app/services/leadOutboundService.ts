@@ -62,6 +62,8 @@ function mapOutboundRow(row: any): Lead {
         ? row.presupuesto
         : row.presupuesto === 'true',
     inspeccion: row.inspeccion === true || row.inspeccion === 'true',
+    empleado: row.empleado === true || row.empleado === 'true',
+    dueno: row.dueno === true || row.dueno === 'true',
   } as Lead;
 }
 

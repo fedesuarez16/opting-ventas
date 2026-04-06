@@ -13,3 +13,10 @@ comment on column public.leads_outbound.llamar is 'Etiqueta: llamar';
 comment on column public.leads_outbound.deriva_humano is 'Etiqueta: deriva humano';
 comment on column public.leads_outbound.presupuesto is 'Etiqueta: presupuesto (flag; no confundir con monto)';
 comment on column public.leads_outbound.inspeccion is 'Etiqueta: inspección';
+
+alter table public.leads_outbound
+  add column if not exists empleado boolean not null default false,
+  add column if not exists dueno boolean not null default false;
+
+comment on column public.leads_outbound.empleado is 'Etiqueta: empleado';
+comment on column public.leads_outbound.dueno is 'Etiqueta: dueño';
