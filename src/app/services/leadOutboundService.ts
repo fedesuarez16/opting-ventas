@@ -54,6 +54,14 @@ function mapOutboundRow(row: any): Lead {
         : row.chat_activo === 0 || row.chat_activo === '0'
           ? 0
           : undefined,
+    llamada_agendada: row.llamada_agendada === true || row.llamada_agendada === 'true',
+    llamar: row.llamar === true || row.llamar === 'true',
+    deriva_humano: row.deriva_humano === true || row.deriva_humano === 'true',
+    presupuesto_etiqueta:
+      typeof row.presupuesto === 'boolean'
+        ? row.presupuesto
+        : row.presupuesto === 'true',
+    inspeccion: row.inspeccion === true || row.inspeccion === 'true',
   } as Lead;
 }
 

@@ -16,6 +16,7 @@ import {
 } from '../../services/leadOutboundService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
 import { getLeadEstadoPillClass } from '../../utils/leadEstadoBadge';
+import { getLeadBooleanEtiquetaLabels } from '../../utils/leadEtiquetaTags';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -153,33 +154,6 @@ export default function LeadsOutboundPage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
-  const getLeadQuality = (l: Lead): number => {
-    const raw =
-      (l as any).calidad ??
-      (l as any).calidad_lead ??
-      (l as any).lead_quality ??
-      (l as any).quality ??
-      (l as any).rating ??
-      (l as any).estrellas ??
-      (l as any).stars ??
-      (l as any).score;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return 0;
-    const clamped = Math.max(0, Math.min(3, Math.trunc(n)));
-    return clamped;
-  };
-  const renderQualityStars = (l: Lead) => {
-    const q = getLeadQuality(l);
-    return (
-      <span className="inline-flex items-center gap-0.5" aria-label={`Calidad ${q}/3`}>
-        {[1, 2, 3].map((i) => (
-          <span key={i} className={i <= q ? 'text-yellow-500' : 'text-gray-300'}>
-            ★
-          </span>
-        ))}
-      </span>
-    );
-  };
 
   const toggleColumnSelector = () => setIsColumnSelectorVisible((v) => !v);
   const handleAddColumn = () => {
@@ -364,10 +338,7 @@ export default function LeadsOutboundPage() {
                     Estado
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Etiqueta
-                  </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Calidad
+                    Etiquetas
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Acción
@@ -377,12 +348,16 @@ export default function LeadsOutboundPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500 text-sm">
+                    <td colSpan={6} className="px-5 py-12 text-center text-gray-500 text-sm">
                       No hay leads outbound. Ajustá los filtros o agregá un nuevo lead.
                     </td>
                   </tr>
                 ) : (
-                  filteredLeads.map((lead) => (
+                  filteredLeads.map((lead) => {
+                    const outboundTags = getLeadBooleanEtiquetaLabels(lead);
+                    const legacyEtiqueta = getEtiqueta(lead);
+                    const legacyOk = legacyEtiqueta && legacyEtiqueta !== '—';
+                    return (
                     <tr key={lead.id} className="hover:bg-gray-50/80">
                       <td className="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-900">
                         {getNombre(lead)}
@@ -400,11 +375,25 @@ export default function LeadsOutboundPage() {
                           {lead.estado || '—'}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
-                        {getEtiqueta(lead)}
-                      </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm">
-                        {renderQualityStars(lead)}
+                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[280px]">
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          {outboundTags.map((label) => (
+                            <span
+                              key={label}
+                              className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-indigo-600/15 whitespace-nowrap"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                          {legacyOk && (
+                            <span className="text-xs text-gray-500 truncate max-w-[160px]" title={legacyEtiqueta}>
+                              {legacyEtiqueta}
+                            </span>
+                          )}
+                          {outboundTags.length === 0 && !legacyOk && (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
                         <span className="inline-flex items-center gap-1.5">
@@ -449,7 +438,8 @@ export default function LeadsOutboundPage() {
                         </span>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -11,6 +11,7 @@ import {
 } from '../../services/leadService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
 import { getLeadEstadoPillClass, normalizeLeadEstadoKey } from '../../utils/leadEstadoBadge';
+import { getLeadBooleanEtiquetaLabels, leadHasAttentionEtiquetas } from '../../utils/leadEtiquetaTags';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -38,8 +39,8 @@ export default function LeadsTablePage() {
   const [searchTerm, setSearchTerm] = useState('');
   /** '' = todos; valores alineados con normalizeLeadEstadoKey */
   const [filterEstado, setFilterEstado] = useState<string>('');
-  /** '' = todas; 1 | 2 | 3 = estrellas exactas en calidad */
-  const [filterCalidadStars, setFilterCalidadStars] = useState<string>('');
+  /** Filtrar solo leads con etiquetas Inspección / Presupuesto / Deriva humano */
+  const [attentionEtiquetasFilter, setAttentionEtiquetasFilter] = useState(false);
 
   const statusOptions: string[] = ['frío', 'tibio', 'caliente', 'llamada', 'llamada realizada', 'lista de difusion'];
   const estadoFilterOptions: { value: string; label: string }[] = [
@@ -48,12 +49,6 @@ export default function LeadsTablePage() {
     { value: 'tibio', label: 'Tibio' },
     { value: 'caliente', label: 'Caliente' },
     { value: 'llamada', label: 'Llamada' },
-  ];
-  const calidadFilterOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Todas las calidades' },
-    { value: '1', label: '1 estrella' },
-    { value: '2', label: '2 estrellas' },
-    { value: '3', label: '3 estrellas' },
   ];
   const [statusDropdownOpenFor, setStatusDropdownOpenFor] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
@@ -75,20 +70,10 @@ export default function LeadsTablePage() {
     load();
   }, []);
 
-  const getLeadQuality = (l: Lead): number => {
-    const raw =
-      (l as any).calidad ??
-      (l as any).calidad_lead ??
-      (l as any).lead_quality ??
-      (l as any).quality ??
-      (l as any).rating ??
-      (l as any).estrellas ??
-      (l as any).stars ??
-      (l as any).score;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(3, Math.trunc(n)));
-  };
+  const attentionEtiquetasCount = useMemo(
+    () => leads.filter((l) => leadHasAttentionEtiquetas(l)).length,
+    [leads]
+  );
 
   const matchesEstadoFilter = (lead: Lead, selected: string): boolean => {
     if (!selected) return true;
@@ -115,14 +100,11 @@ export default function LeadsTablePage() {
     if (filterEstado) {
       out = out.filter((l) => matchesEstadoFilter(l, filterEstado));
     }
-    if (filterCalidadStars) {
-      const n = Number(filterCalidadStars);
-      if (Number.isFinite(n)) {
-        out = out.filter((l) => getLeadQuality(l) === n);
-      }
+    if (attentionEtiquetasFilter) {
+      out = out.filter((l) => leadHasAttentionEtiquetas(l));
     }
     return out;
-  }, [leads, searchTerm, filterEstado, filterCalidadStars]);
+  }, [leads, searchTerm, filterEstado, attentionEtiquetasFilter]);
 
   useEffect(() => {
     setFilteredLeads(filtered);
@@ -174,18 +156,6 @@ export default function LeadsTablePage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
-  const renderQualityStars = (l: Lead) => {
-    const q = getLeadQuality(l);
-    return (
-      <span className="inline-flex items-center gap-0.5" aria-label={`Calidad ${q}/3`}>
-        {[1, 2, 3].map((i) => (
-          <span key={i} className={i <= q ? 'text-yellow-500' : 'text-gray-300'}>
-            ★
-          </span>
-        ))}
-      </span>
-    );
-  };
 
   if (isLoading) {
     return (
@@ -231,7 +201,7 @@ export default function LeadsTablePage() {
           <div className="px-6 py-3 flex justify-between items-center border-t border-gray-100 flex-wrap gap-3">
             <div className="flex items-center gap-4 flex-wrap">
               <h1 className="text-xl font-bold text-slate-800">Tabla de Leads</h1>
-              {(searchTerm || filterEstado || filterCalidadStars) && (
+              {(searchTerm || filterEstado || attentionEtiquetasFilter) && (
                 <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
                   {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
                 </span>
@@ -263,21 +233,37 @@ export default function LeadsTablePage() {
                   ))}
                 </select>
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Calidad</span>
-                <select
-                  value={filterCalidadStars}
-                  onChange={(e) => setFilterCalidadStars(e.target.value)}
-                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[160px]"
-                  aria-label="Filtrar por estrellas de calidad"
-                >
-                  {calidadFilterOptions.map((opt) => (
-                    <option key={opt.value || 'all-cal'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <button
+                type="button"
+                onClick={() => setAttentionEtiquetasFilter((v) => !v)}
+                className={[
+                  'relative inline-flex items-center justify-center rounded-lg border p-2 transition-colors',
+                  attentionEtiquetasFilter
+                    ? 'border-amber-400 bg-amber-50 text-amber-900 ring-2 ring-amber-200'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+                ].join(' ')}
+                title={
+                  attentionEtiquetasFilter
+                    ? 'Quitar filtro de etiquetas (inspección, presupuesto, deriva humano)'
+                    : 'Ver solo leads con inspección, presupuesto o deriva humano'
+                }
+                aria-pressed={attentionEtiquetasFilter}
+                aria-label={`Alertas de etiquetas: ${attentionEtiquetasCount} leads`}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+                {attentionEtiquetasCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white tabular-nums">
+                    {attentionEtiquetasCount > 99 ? '99+' : attentionEtiquetasCount}
+                  </span>
+                )}
+              </button>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -309,10 +295,7 @@ export default function LeadsTablePage() {
                     Estado
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Etiqueta
-                  </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Calidad
+                    Etiquetas
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Acción
@@ -322,12 +305,16 @@ export default function LeadsTablePage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500 text-sm">
+                    <td colSpan={6} className="px-5 py-12 text-center text-gray-500 text-sm">
                       No hay leads para mostrar. Ajustá los filtros o la búsqueda.
                     </td>
                   </tr>
                 ) : (
-                  filteredLeads.map((lead) => (
+                  filteredLeads.map((lead) => {
+                    const booleanTags = getLeadBooleanEtiquetaLabels(lead);
+                    const legacyEtiqueta = getEtiqueta(lead);
+                    const legacyOk = legacyEtiqueta && legacyEtiqueta !== '—';
+                    return (
                     <tr key={lead.id} className="hover:bg-gray-50/80">
                       <td className="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-900">
                         {getNombre(lead)}
@@ -378,11 +365,25 @@ export default function LeadsTablePage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[180px] truncate" title={getEtiqueta(lead)}>
-                        {getEtiqueta(lead)}
-                      </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm">
-                        {renderQualityStars(lead)}
+                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[280px]">
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          {booleanTags.map((label) => (
+                            <span
+                              key={label}
+                              className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-indigo-600/15 whitespace-nowrap"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                          {legacyOk && (
+                            <span className="text-xs text-gray-500 truncate max-w-[160px]" title={legacyEtiqueta}>
+                              {legacyEtiqueta}
+                            </span>
+                          )}
+                          {booleanTags.length === 0 && !legacyOk && (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
                         <span className="inline-flex items-center gap-1.5">
@@ -427,7 +428,8 @@ export default function LeadsTablePage() {
                         </span>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

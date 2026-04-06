@@ -44,6 +44,13 @@ export interface Lead {
   etiqueta?: string | null;
   /** Calidad del lead 1–3 (columna opcional en public.leads) */
   calidad?: number | null;
+  /** Flags de etiquetas en public.leads_outbound (boolean en BD) */
+  llamada_agendada?: boolean;
+  llamar?: boolean;
+  deriva_humano?: boolean;
+  /** Flag etiqueta "presupuesto" en leads_outbound (columna boolean `presupuesto`) */
+  presupuesto_etiqueta?: boolean;
+  inspeccion?: boolean;
 }
 
 export interface FilterOptions {

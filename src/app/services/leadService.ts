@@ -279,6 +279,12 @@ const mapLeadRow = (row: any): Lead => {
             : 0,
     // chatwoot_conversation_id para calificación automática basada en mensajes
     chatwoot_conversation_id: row.chatwoot_conversation_id ?? undefined,
+    llamada_agendada: row.llamada_agendada === true || row.llamada_agendada === 'true',
+    llamar: row.llamar === true || row.llamar === 'true',
+    deriva_humano: row.deriva_humano === true || row.deriva_humano === 'true',
+    presupuesto_etiqueta:
+      row.presupuesto_etiqueta === true || row.presupuesto_etiqueta === 'true',
+    inspeccion: row.inspeccion === true || row.inspeccion === 'true',
   };
 };
 
