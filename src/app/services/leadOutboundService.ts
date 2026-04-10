@@ -22,6 +22,22 @@ const normalizeEstado = (estado: string | null | undefined): string => {
   return estado.toLowerCase().trim();
 };
 
+/** Solo estos `phone_from` se listan en el tablero outbound (+5491123312054 o vacío/null). */
+const OUTBOUND_VISIBLE_PHONE_FROM = '+5491123312054';
+
+function digitsOnlyPhone(s: string): string {
+  return String(s).replace(/\D/g, '');
+}
+
+const OUTBOUND_VISIBLE_PHONE_FROM_DIGITS = digitsOnlyPhone(OUTBOUND_VISIBLE_PHONE_FROM);
+
+/** Incluir lead en tabla outbound: phone_from null/vacío o igual al número permitido (solo dígitos). */
+export function matchesOutboundTablePhoneFrom(lead: Lead): boolean {
+  const raw = lead.phone_from;
+  if (raw == null || String(raw).trim() === '') return true;
+  return digitsOnlyPhone(String(raw)) === OUTBOUND_VISIBLE_PHONE_FROM_DIGITS;
+}
+
 /** Mapea una fila de leads_outbound a Lead para reutilizar la UI */
 function mapOutboundRow(row: any): Lead {
   const estado = normalizeEstado(row.estado) || 'active';
@@ -105,6 +121,7 @@ export async function getAllOutboundLeads(): Promise<Lead[]> {
 /** Filtra los leads outbound en memoria (por estado y opciones básicas) */
 export function filterOutboundLeads(options: FilterOptions): Lead[] {
   return cachedOutboundLeads.filter((lead) => {
+    if (!matchesOutboundTablePhoneFrom(lead)) return false;
     if (options.estado && lead.estado !== options.estado) return false;
     return true;
   });
@@ -114,6 +131,7 @@ export function filterOutboundLeads(options: FilterOptions): Lead[] {
 export function getUniqueOutboundStatuses(): string[] {
   const set = new Set<string>();
   cachedOutboundLeads.forEach((l) => {
+    if (!matchesOutboundTablePhoneFrom(l)) return;
     const e = normalizeEstado(l.estado);
     if (e) set.add(e);
   });

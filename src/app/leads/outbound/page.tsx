@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import AppLayout from '../../components/AppLayout';
 import LeadFilter from '../../components/LeadFilter';
 import LeadEditSidebar from '../../components/LeadEditSidebar';
@@ -11,12 +11,14 @@ import {
   getAllOutboundLeads,
   filterOutboundLeads,
   getUniqueOutboundStatuses,
+  matchesOutboundTablePhoneFrom,
   updateOutboundLead,
+  updateOutboundLeadStatus,
   createOutboundLead,
 } from '../../services/leadOutboundService';
 import { exportLeadsToCSV } from '../../utils/exportUtils';
 import { getLeadEstadoPillClass } from '../../utils/leadEstadoBadge';
-import { getLeadBooleanEtiquetaLabels } from '../../utils/leadEtiquetaTags';
+import { getLeadBooleanEtiquetaLabels, leadHasAttentionEtiquetas } from '../../utils/leadEtiquetaTags';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
@@ -56,6 +58,7 @@ export default function LeadsOutboundPage() {
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [attentionEtiquetasFilter, setAttentionEtiquetasFilter] = useState(false);
 
   const [zonas, setZonas] = useState<string[]>([]);
   const [estados, setEstados] = useState<string[]>([]);
@@ -77,6 +80,10 @@ export default function LeadsOutboundPage() {
   const [columnColors, setColumnColors] = useState<Record<string, string>>(DEFAULT_OUTBOUND_COLORS);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  const [statusDropdownOpenFor, setStatusDropdownOpenFor] = useState<string | null>(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const statusDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -102,9 +109,53 @@ export default function LeadsOutboundPage() {
     loadData();
   }, []);
 
+  const statusOptions = useMemo(() => {
+    const base = ['active', 'respondio', 'llamada', 'no_contesta', 'cerrado'];
+    const merged = [...new Set([...base, ...(estados || [])].filter(Boolean).map(String))];
+    return merged.sort();
+  }, [estados]);
+
+  const attentionEtiquetasCount = useMemo(() => {
+    return leads.filter((l) => matchesOutboundTablePhoneFrom(l) && leadHasAttentionEtiquetas(l)).length;
+  }, [leads]);
+
+  useEffect(() => {
+    if (!statusDropdownOpenFor) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!statusDropdownRef.current) return;
+      const target = e.target as Node;
+      if (!statusDropdownRef.current.contains(target)) {
+        setStatusDropdownOpenFor(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [statusDropdownOpenFor]);
+
+  const handleUpdateEstado = async (leadId: string, estado: string) => {
+    setStatusUpdatingId(leadId);
+    try {
+      const ok = await updateOutboundLeadStatus(leadId, estado);
+      if (ok) {
+        setLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? { ...l, estado } : l)));
+        setFilteredLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? { ...l, estado } : l)));
+        setStatusDropdownOpenFor(null);
+        setEstados(getUniqueOutboundStatuses());
+      } else {
+        alert('Error al actualizar el estado del lead outbound.');
+      }
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     let out = filterOutboundLeads(filterOptions);
     if (!Array.isArray(out)) return leads;
+    if (attentionEtiquetasFilter) {
+      out = out.filter((l) => leadHasAttentionEtiquetas(l));
+    }
     if (deferredSearchTerm?.trim()) {
       const q = deferredSearchTerm.toLowerCase().trim();
       const qRaw = deferredSearchTerm.trim();
@@ -115,7 +166,7 @@ export default function LeadsOutboundPage() {
       });
     }
     return out;
-  }, [leads, filterOptions, deferredSearchTerm]);
+  }, [leads, filterOptions, deferredSearchTerm, attentionEtiquetasFilter]);
 
   useEffect(() => {
     setFilteredLeads(filtered);
@@ -233,7 +284,7 @@ export default function LeadsOutboundPage() {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <h1 className="text-md font-semibold text-slate-800 tracking-tight">Tablero Outbound</h1>
-                {searchTerm && (
+                {(searchTerm || filterOptions.estado || attentionEtiquetasFilter) && (
                   <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
                     {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
                   </span>
@@ -256,6 +307,58 @@ export default function LeadsOutboundPage() {
                   </button>
                 )}
               </div>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Estado</span>
+                <select
+                  value={String(filterOptions.estado ?? '')}
+                  onChange={(e) =>
+                    setFilterOptions((prev) => ({
+                      ...prev,
+                      estado: e.target.value ? (e.target.value as any) : undefined,
+                    }))
+                  }
+                  className="border border-gray-300 rounded-lg text-sm py-1.5 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 min-w-[140px]"
+                  aria-label="Filtrar por estado"
+                >
+                  <option value="">Todos los estados</option>
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setAttentionEtiquetasFilter((v) => !v)}
+                className={[
+                  'relative inline-flex items-center justify-center rounded-lg border p-2 transition-colors',
+                  attentionEtiquetasFilter
+                    ? 'border-amber-400 bg-amber-50 text-amber-900 ring-2 ring-amber-200'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+                ].join(' ')}
+                title={
+                  attentionEtiquetasFilter
+                    ? 'Quitar filtro de etiquetas (inspección, presupuesto, deriva humano)'
+                    : 'Ver solo leads con inspección, presupuesto o deriva humano'
+                }
+                aria-pressed={attentionEtiquetasFilter}
+                aria-label={`Alertas de etiquetas: ${attentionEtiquetasCount} leads`}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+                {attentionEtiquetasCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white tabular-nums">
+                    {attentionEtiquetasCount > 99 ? '99+' : attentionEtiquetasCount}
+                  </span>
+                )}
+              </button>
             </div>
             <div className="flex space-x-2">
               {!isSelectionMode ? (
@@ -369,11 +472,44 @@ export default function LeadsOutboundPage() {
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span
-                          className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)}`}
-                        >
-                          {lead.estado || '—'}
-                        </span>
+                        <div className="relative inline-block">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStatusDropdownOpenFor((cur) => (cur === lead.id ? null : String(lead.id)))
+                            }
+                            disabled={!!statusUpdatingId && statusUpdatingId !== String(lead.id)}
+                            className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)} cursor-pointer select-none`}
+                            aria-haspopup="listbox"
+                            aria-expanded={statusDropdownOpenFor === String(lead.id)}
+                            title="Cambiar estado"
+                          >
+                            {lead.estado || '—'}
+                          </button>
+
+                          {statusDropdownOpenFor === String(lead.id) && (
+                            <div
+                              ref={statusDropdownRef}
+                              className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-72 overflow-y-auto"
+                              role="listbox"
+                              aria-label="Opciones de estado"
+                            >
+                              {statusOptions.map((opt) => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 whitespace-nowrap ${
+                                    opt === lead.estado ? 'bg-gray-100 font-medium' : ''
+                                  }`}
+                                  onClick={() => handleUpdateEstado(String(lead.id), opt)}
+                                  disabled={statusUpdatingId === String(lead.id)}
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[280px]">
                         <div className="flex flex-wrap gap-1.5 items-center">
