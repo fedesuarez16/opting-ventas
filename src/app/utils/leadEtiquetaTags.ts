@@ -1,4 +1,5 @@
 import type { Lead } from '../types';
+import { normalizeLeadEstadoKey } from './leadEstadoBadge';
 
 /** Etiquetas desde columnas boolean en leads / leads_outbound */
 export const LEAD_BOOLEAN_ETIQUETA_FIELDS: { field: keyof Lead; label: string }[] = [
@@ -17,8 +18,12 @@ export function getLeadBooleanEtiquetaLabels(lead: Lead): string[] {
   );
 }
 
-/** Inspección, presupuesto o deriva humano: requieren seguimiento / notificación. */
+/**
+ * Requieren seguimiento / notificación: inspección, presupuesto, deriva humano,
+ * o estado del lead "llamada agendada".
+ */
 export function leadHasAttentionEtiquetas(lead: Lead): boolean {
+  if (normalizeLeadEstadoKey(lead.estado) === 'llamada agendada') return true;
   return (
     lead.inspeccion === true || lead.presupuesto_etiqueta === true || lead.deriva_humano === true
   );

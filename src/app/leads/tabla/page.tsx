@@ -15,6 +15,11 @@ import { getLeadBooleanEtiquetaLabels, leadHasAttentionEtiquetas } from '../../u
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
+/** Número de origen (`phone_from`) usado en filtros de la tabla. */
+const PHONE_FROM_FILTER_TARGET = '+5491141872290';
+
+type PhoneFromTableFilter = '' | 'only_target' | 'exclude_target';
+
 function formatDateTime(value: string | undefined): string {
   if (!value) return '—';
   try {
@@ -41,6 +46,8 @@ export default function LeadsTablePage() {
   const [filterEstado, setFilterEstado] = useState<string>('');
   /** Filtrar solo leads con etiquetas Inspección / Presupuesto / Deriva humano */
   const [attentionEtiquetasFilter, setAttentionEtiquetasFilter] = useState(false);
+  /** Filtro por `phone_from`: solo ese número, o todos menos ese (incluye null). */
+  const [filterPhoneFrom, setFilterPhoneFrom] = useState<PhoneFromTableFilter>('');
 
   const statusOptions: string[] = ['frío', 'tibio', 'caliente', 'llamada', 'llamada realizada', 'lista de difusion'];
   const estadoFilterOptions: { value: string; label: string }[] = [
@@ -103,8 +110,13 @@ export default function LeadsTablePage() {
     if (attentionEtiquetasFilter) {
       out = out.filter((l) => leadHasAttentionEtiquetas(l));
     }
+    if (filterPhoneFrom === 'only_target') {
+      out = out.filter((l) => (l.phone_from ?? '') === PHONE_FROM_FILTER_TARGET);
+    } else if (filterPhoneFrom === 'exclude_target') {
+      out = out.filter((l) => (l.phone_from ?? '') !== PHONE_FROM_FILTER_TARGET);
+    }
     return out;
-  }, [leads, searchTerm, filterEstado, attentionEtiquetasFilter]);
+  }, [leads, searchTerm, filterEstado, attentionEtiquetasFilter, filterPhoneFrom]);
 
   useEffect(() => {
     setFilteredLeads(filtered);
@@ -156,11 +168,13 @@ export default function LeadsTablePage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
+  const getServicioLabel = (l: Lead) =>
+    (l.phone_from ?? '') === PHONE_FROM_FILTER_TARGET ? 'Carnet' : 'S&H';
 
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="mb-8 mx-1 sm:mx-1">
+        <div className="mb-8 ">
           <div className="bg-white border border-gray-200 rounded-lg mb-4 px-4 sm:px-6 py-4">
             <Skeleton className="h-4 w-48 mb-2" />
             <Skeleton className="h-10 w-64" />
@@ -180,9 +194,9 @@ export default function LeadsTablePage() {
 
   return (
     <AppLayout>
-      <div className="mb-8 mx-4 sm:mx-1">
-        <div className="bg-white shadow-sm border border-gray-200 rounded-lg mb-4 px-4 sm:px-2">
-          <div className="px-4 py-2">
+      <div className="mb-8  sm:mx-1">
+        <div className="bg-white shadow-sm border-t  border-gray-200  mb-4 px-4 sm:px-2">
+          <div className="px-4 py-3">
             <nav className="flex" aria-label="Breadcrumb">
               <ol className="inline-flex items-center space-x-1 md:space-x-3">
                 <li>
@@ -192,7 +206,7 @@ export default function LeadsTablePage() {
                 </li>
                 <li>
                   <span className="mx-1 text-gray-400">/</span>
-                  <span className="text-sm font-medium text-indigo-600" aria-current="page">Leads</span>
+                  <span className="text-sm font-medium text-gray-600" aria-current="page">Leads</span>
                 </li>
               </ol>
             </nav>
@@ -200,8 +214,8 @@ export default function LeadsTablePage() {
 
           <div className="px-6 py-3 flex justify-between items-center border-t border-gray-100 flex-wrap gap-3">
             <div className="flex items-center gap-4 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-800">Tabla de Leads</h1>
-              {(searchTerm || filterEstado || attentionEtiquetasFilter) && (
+              <h1 className="text-xl font-regular text-slate-800">Tabla de Leads</h1>
+              {(searchTerm || filterEstado || attentionEtiquetasFilter || filterPhoneFrom) && (
                 <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
                   {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
                 </span>
@@ -231,6 +245,19 @@ export default function LeadsTablePage() {
                       {opt.label}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Origen</span>
+                <select
+                  value={filterPhoneFrom}
+                  onChange={(e) => setFilterPhoneFrom((e.target.value || '') as PhoneFromTableFilter)}
+                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 max-w-[min(100vw-2rem,18rem)]"
+                  aria-label="Filtrar por número de origen phone_from"
+                >
+                  <option value="">Todos los orígenes</option>
+                  <option value="only_target">Carnet</option>
+                  <option value="exclude_target">S&H</option>
                 </select>
               </label>
               <button
@@ -265,28 +292,26 @@ export default function LeadsTablePage() {
                 )}
               </button>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              >
-                Exportar CSV
-              </button>
-            </div>
+            
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm">
+        <div className="bg-white border m-2 border-gray-200 rounded-lg overflow-visible shadow-sm">
           <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th
+                    scope="col"
+                    className="px-3 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[1%] max-w-[9rem] sm:max-w-[11rem]"
+                  >
                     Nombre
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Teléfono
+                  </th>
+                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                    Servicio
                   </th>
                   <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Fecha/Hora Contacto
@@ -305,7 +330,7 @@ export default function LeadsTablePage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center text-gray-500 text-sm">
+                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500 text-sm">
                       No hay leads para mostrar. Ajustá los filtros o la búsqueda.
                     </td>
                   </tr>
@@ -316,13 +341,18 @@ export default function LeadsTablePage() {
                     const legacyOk = legacyEtiqueta && legacyEtiqueta !== '—';
                     return (
                     <tr key={lead.id} className="hover:bg-gray-50/80">
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {getNombre(lead)}
+                      <td className="px-3 py-3.5 text-sm font-medium text-gray-900 max-w-[9rem] sm:max-w-[11rem]">
+                        <span className="block truncate" title={getNombre(lead)}>
+                          {getNombre(lead)}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
                         {getPhone(lead) || '—'}
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                      <td className="px-5 py-3.5   whitespace-nowrap text-sm text-gray-700">
+                        <span className="text-sm bg-gray-100 border border-gray-200  px-2 py-1 rounded-full">{getServicioLabel(lead)}</span>
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap  text-sm text-gray-600">
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
