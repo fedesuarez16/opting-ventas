@@ -1,0 +1,245 @@
+{
+  "updatedAt": "2026-04-24T21:20:57.278Z",
+  "createdAt": "2026-04-24T20:49:06.614Z",
+  "id": "4S30NZFkDsHNLt14",
+  "name": "Opting - Seguimiento 30min",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Cron cada 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 5 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Buscar Pendientes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [256, 0],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  phone,\n  phone_from,\n  customer_name,\n  last_bot_message_at\nFROM seguimiento_whatsapp\nWHERE responded = false\n  AND COALESCE(followup_30min_sent, false) = false\n  AND last_bot_message_at < NOW() - INTERVAL '30 minutes'\n  AND last_bot_message_at > NOW() - INTERVAL '24 hours'\n  AND EXTRACT(HOUR FROM (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')) BETWEEN 9 AND 21\nORDER BY last_bot_message_at ASC\nLIMIT 50;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      }
+    },
+    {
+      "id": "n2b",
+      "name": "Traer Historial",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [384, 0],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n  (SELECT json_agg(sub.message ORDER BY sub.id DESC)\n   FROM (\n     SELECT id, message FROM chat_histories\n     WHERE session_id = $1\n     ORDER BY id DESC\n     LIMIT 8\n   ) sub),\n  '[]'::json\n) AS chat_history;",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Formatear Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 0],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map((item, idx) => {\n  const hist = item.json;\n  const src = ($('Buscar Pendientes').all()[idx] || {}).json || {};\n  const history = Array.isArray(hist.chat_history) ? hist.chat_history.slice().reverse() : [];\n  const conversation = history.map(m => {\n    const t = (m && m.type) || (m && m.id && Array.isArray(m.id) && m.id[m.id.length-1]) || '';\n    const isHuman = /human/i.test(t);\n    const role = isHuman ? 'Cliente' : 'Tomas (bot)';\n    let content = '';\n    if (m && m.data && typeof m.data.content === 'string') content = m.data.content;\n    else if (m && m.kwargs && typeof m.kwargs.content === 'string') content = m.kwargs.content;\n    else if (typeof m === 'string') content = m;\n    return role + ': ' + content;\n  }).join('\\n');\n  return {\n    json: {\n      phone: src.phone,\n      phone_from: src.phone_from,\n      customer_name: src.customer_name,\n      last_bot_message_at: src.last_bot_message_at,\n      conversation,\n      has_history: history.length > 0\n    }\n  };\n});"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Clasificador Conversacion",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.6,
+      "position": [896, 0],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Sos un clasificador. Leé esta conversación de WhatsApp entre \"Tomas\" (bot de ventas de Opting, carnets de manipulación de alimentos) y el \"Cliente\". El cliente no respondió al último mensaje del bot hace más de 30 minutos.\n\nTu tarea: decidir si corresponde mandar un follow-up o si la conversación ya está cerrada.\n\nLa conversación está CERRADA (should_followup=false) si detectás cualquiera de:\n- El cliente confirmó la compra, dijo que va a inscribirse, o ya se inscribió\n- El cliente dijo explícitamente que no le interesa o se despidió (\"gracias\", \"chau\", \"no gracias\", \"no me interesa\")\n- El bot derivó a soporte técnico (problema con accesos al curso, certificado, etc.)\n- El último mensaje del bot fue exactamente \"👍\" (señal de fin de conversación)\n- Se agendó una reunión/llamada por auditoría o plan anual\n- La conversación es sobre un tema distinto a ventas (queja, reclamo ya derivado)\n\nLa conversación está ABIERTA (should_followup=true) si:\n- El bot mandó info/link del carnet y el cliente no reaccionó (el caso típico)\n- Hay una consulta activa sobre carnet (precio, pago, link) sin resolución\n- El bot hizo una pregunta para calificar (ej: \"¿para vos o para empleados?\") y el cliente no contestó\n\nConversación (orden cronológico, más viejo arriba):\n---\n{{ $json.conversation }}\n---\n\nDevolvé EXCLUSIVAMENTE un JSON válido, sin markdown, sin texto extra, con esta forma exacta:\n{\"should_followup\": true, \"reason\": \"<motivo corto en 3-5 palabras>\"}",
+        "messages": { "messageValues": [] }
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [848, 224],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-20250514",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "anthropicApi": { "id": "x1cMDDSv3RoaFkK5", "name": "Anthropic account" }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Parsear Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1152, 0],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map((item, idx) => {\n  const raw = item.json.text || item.json.output || item.json.response || '';\n  let parsed = null;\n  try {\n    const clean = String(raw).replace(/```json\\s*/gi, '').replace(/```\\s*/g, '').trim();\n    parsed = JSON.parse(clean);\n  } catch (e) {\n    const m = String(raw).match(/\\{[\\s\\S]*\\}/);\n    if (m) {\n      try { parsed = JSON.parse(m[0]); } catch (e2) {}\n    }\n  }\n  if (!parsed || typeof parsed !== 'object') {\n    parsed = { should_followup: true, reason: 'parse_error' };\n  }\n  const ctx = $('Formatear Contexto').all()[idx] ? $('Formatear Contexto').all()[idx].json : {};\n  return {\n    json: {\n      phone: ctx.phone,\n      phone_from: ctx.phone_from,\n      customer_name: ctx.customer_name,\n      should_followup: !!parsed.should_followup,\n      reason: String(parsed.reason || '').slice(0, 100)\n    }\n  };\n});"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Mandar followup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1408, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.should_followup }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Preparar Payload yCloud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1664, -128],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn {\n  json: {\n    phone: item.phone,\n    from: item.phone_from,\n    to: item.phone,\n    type: 'text',\n    text: {\n      body: 'Hola! ¿Pudiste ver la info que te pasé? ¿Te quedó alguna duda o te ayudo con algo?',\n      preview_url: true\n    }\n  }\n};"
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Enviar WhatsApp yCloud",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1920, -128],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "e2bb8a4e15e2ce381c4acd6c2bda500e" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $json.from }}\",\n  \"to\": \"{{ $json.to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.text.body }}\",\n    \"preview_url\": true\n  }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Marcar followup enviado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2176, -128],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE seguimiento_whatsapp SET followup_30min_sent = true, conversation_status = 'followup_sent' WHERE phone = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Parsear Resultado').item.json.phone }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Marcar cerrada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1664, 128],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE seguimiento_whatsapp SET conversation_status = $1 WHERE phone = $2;",
+        "options": {
+          "queryReplacement": "={{ 'closed:' + $json.reason }},{{ $json.phone }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      }
+    }
+  ],
+  "connections": {
+    "Cron cada 5 min": {
+      "main": [[{ "node": "Buscar Pendientes", "type": "main", "index": 0 }]]
+    },
+    "Buscar Pendientes": {
+      "main": [[{ "node": "Traer Historial", "type": "main", "index": 0 }]]
+    },
+    "Traer Historial": {
+      "main": [[{ "node": "Formatear Contexto", "type": "main", "index": 0 }]]
+    },
+    "Formatear Contexto": {
+      "main": [[{ "node": "Clasificador Conversacion", "type": "main", "index": 0 }]]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [[{ "node": "Clasificador Conversacion", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Clasificador Conversacion": {
+      "main": [[{ "node": "Parsear Resultado", "type": "main", "index": 0 }]]
+    },
+    "Parsear Resultado": {
+      "main": [[{ "node": "Mandar followup?", "type": "main", "index": 0 }]]
+    },
+    "Mandar followup?": {
+      "main": [
+        [{ "node": "Preparar Payload yCloud", "type": "main", "index": 0 }],
+        [{ "node": "Marcar cerrada", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Payload yCloud": {
+      "main": [[{ "node": "Enviar WhatsApp yCloud", "type": "main", "index": 0 }]]
+    },
+    "Enviar WhatsApp yCloud": {
+      "main": [[{ "node": "Marcar followup enviado", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}

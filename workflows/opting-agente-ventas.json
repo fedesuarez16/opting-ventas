@@ -1,0 +1,3232 @@
+{
+  "updatedAt": "2026-04-25T05:36:54.653Z",
+  "createdAt": "2026-02-12T22:21:29.408Z",
+  "id": "PxrfRFfaX-QGTqBlh2992",
+  "name": "Opting - Agente Ventas",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "seguimiento_whatsapp",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "phone",
+              "condition": "eq",
+              "keyValue": "={{ $json.from }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "responded",
+              "fieldValue": "true"
+            }
+          ]
+        }
+      },
+      "name": "Marcar Respondido1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -10448,
+        256
+      ],
+      "id": "246aedf1-4ffa-4ca4-91dc-7bb072476191",
+      "credentials": {
+        "supabaseApi": {
+          "id": "HzCSuC5VeQmhADg5",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── 1. EXTRAER DATOS DEL MENSAJE YCLOUD ──────────────────────────────────────\nconst body = $input.item.json.body;\nconst whatsappMsg = body.whatsappInboundMessage;\n\nconst messageId    = whatsappMsg.id;\nconst wamid        = whatsappMsg.wamid;\nconst from         = whatsappMsg.from;\nconst to           = whatsappMsg.to;\nconst customerName = whatsappMsg.customerProfile?.name || 'Cliente';\nconst messageType  = whatsappMsg.type;\nconst messageBody  = whatsappMsg.text?.body || '';\nconst timestamp = new Date(whatsappMsg.sendTime).toISOString();\nconst wabaId       = whatsappMsg.wabaId;\nconst eventType    = body.type;\nconst eventId      = body.id;\n\n// ── 2. CALCULAR HORARIO DE ATENCIÓN (Argentina UTC-3) ────────────────────────\nconst fecha = typeof timestamp === 'number'\n  ? new Date(timestamp)\n  : new Date(timestamp);\n\nconst offsetArg  = -3;\nconst horaArg    = new Date(fecha.getTime() + offsetArg * 60 * 60 * 1000);\n\nconst hora       = horaArg.getUTCHours();\nconst minutos    = horaArg.getUTCMinutes();\nconst dia        = horaArg.getUTCDay(); // 0 = domingo, 6 = sábado\n\nconst horaDecimal    = hora + minutos / 60;\nconst esDomingo      = dia === 0;\nconst dentroDeHorario = !esDomingo && horaDecimal >= 9 && horaDecimal < 18;\n\n// ── 3. FILTRAR MENSAJES VIEJOS ────────────────────────────────────────────────\nconst ahora      = Date.now();\nconst mensajeMs  = typeof timestamp === 'number'\n  ? timestamp\n  : new Date(timestamp).getTime();\n\nconst diferenciaMinutos = (ahora - mensajeMs) / 1000 / 60;\nconst esMensajeReciente = diferenciaMinutos <= 1;\n\n// ── 4. RETORNAR TODO JUNTO ────────────────────────────────────────────────────\nreturn {\n  messageId,\n  wamid,\n  from,\n  to,\n  customerName,\n  messageType,\n  messageBody,\n  timestamp,\n  wabaId,\n  eventType,\n  eventId,\n  dentroDeHorario,\n  esMensajeReciente\n};\n"
+      },
+      "id": "8e3394f4-5dc0-4587-94c7-cc67af4737ef",
+      "name": "Parsear Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12656,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b0a34888-aa25-4e65-9ff1-5c62f1898cc5",
+              "leftValue": "={{ $json.dentroDeHorario }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -10448,
+        32
+      ],
+      "id": "d9d1b06d-06ec-42f8-b02e-c377fedda97c",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.messageBody }}",
+        "options": {
+          "systemMessage": "=## IDENTIDAD\nSos Tomas, asistente virtual de Opting (Seguridad e Higiene). Atendés consultas sobre carnets de manipuladores, auditorías y planes anuales para locales gastronómicos.\n\n---\n\nTu objetivo es entender qué necesita el prospecto y guiarlo hacia la compra del Carnet de Manipulación de Alimentos (DIPA).\n\n🚨 REGLAS ABSOLUTAS (CRÍTICA – PRIORIDAD MÁXIMA)\n\n❌ NO hagas múltiples preguntas en un solo mensaje\n❌ NO te presentes mas de una vez, solo en el mensaje inicial\n❌ No te salgas de las instrucciones, si el cliente pide algo u ofrece algo fuera de lo mencionado en las intrucciones, deci que lo vas a derivar \n❌ Si no quieren comprar, no insistas\n❌ No menciones el nombre del cliente al formular la respuesta\n❌ NUNCA ofrezcas una llamada para solucionar un problema tecnico o por que no le llegan los accesos, solo ofrece llamadas para ventas\n\n\n🚨 REGLA PARA CARNET INDIVIDUAL:\nNunca ofrezcas agendar una reunión o llamada para cerrar la venta del carnet individual. El objetivo es siempre redirigir al link de inscripción:\n👉 https://www.optingsha.com.ar/carnet_manipuladores2.php\nSolo agendá reunión si el usuario pregunta por auditorías o planes anuales.\n\n\n\nSI NO HAY NADA QUE RESPONDER: Devuelve un un simple \"👍\"\n\n## FLUJO DE CONVERSACIÓN\n\n**1. Saludo inicial**\n- Si el usuario consulto por carnet de manipulacion de alimentos: \n\"Hola, soy Tomas de Opting. ¿Cómo estás? Comentame, ¿El carnet es para vos o sos el dueño/encargado de un local y es para tus empleados?\"\n\n**2. Identificar para quién es el carnet MUY IMPORTANTE QUE HAGAS ESTA PREGUNTA**\nPreguntá: \"¿El carnet es para vos o sos el dueño/encargado de un local y es para tus empleados?\"\n\n**2b. Si respondió que es para empleados → preguntar cantidad (NO saltearse este paso)**\nPreguntá: \"¿Para cuántos empleados necesitás el carnet?\"\n\n**3a. Si el carnet es para él mismo o para 4 empleados o menos**\nRespondé algo como esto:\n\n\"Para obtener tu Carnet Oficial (DIPA) con validez nacional por 3 años, solo tenés que completar tu inscripción en el siguiente link:\n👉 https://www.optingsha.com.ar/carnet_manipuladores2.php\n\nDetalles del servicio:\n✅ Precio: $22.990 (Final, incluye tasa de gestión)\n✅ Modalidad: 100% Online, a tu ritmo\n✅ Entrega: Recibís el carnet en tu email en 72 hs hábiles\n\nUna vez realizado el pago, el sistema te enviará los accesos al curso de forma automática. Exitos en el curso!\"\n\nACLARACION: usa esta informacion como contexto, el sistema le enviara los accesos automaticamente por mail, solo si paga a traves de link, si paga a travesde transferencia puede tardar entre 24 y 48hs en recibir los accesos\n\n**3b. Si es para más de 4 empleados de un local**\n\"Para Comercios/empresas con más de 4 empleados, te pido que nos envies un email haciendo click\nen el siguiente enlcae:\n\nhttps://www.optingsha.com.ar/carnet_manipuladores.php#empresa\n\nLuego hace click en el botón SOLICITAR PRESUPUESTO.\n\nA la brevedad te cotizo.\"\n\n  → SI muestra interés en seguridad e higiene:\n  \"Podemos agendar una reunión de 10 minutos y hacemos una breve presentación de los servicios para potenciar tu negocio. Que te parece\"\n\n  → SI dice que no le interesa o se despide:\n  \"Entonces espero que nos envíes tu email con la solicitud de presupuesto por los carnets. Te dejo nuevamente el enlace:\n  https://www.optingsha.com.ar/carnet_manipuladores.php#empresa\"\n\nACLARACION: Solo ofrece el servicio de seguridad e higiene si es el dueño de un local \n\n\n### C) SI pide pagar por transferencia o solicita CBU/alias:\n\n\"Hola [nombre], ¿cómo estás?\nTe paso: Alias optingsrl.bbva | CBU: 0170338020000030594238\n\nEnvianos el comprobante a este nuemro: +54 11 3361 0471 en 48 hs, si el pago está acreditado, te enviamos los accesos al curso. Tene en cuenta que si lo pagas a traves de la web es mas rapido y no tenes que esperar las 48 hs. \n¿Me dejás tu email? El carnet es para vos o para tus empleados?\"\n→ Luego de recibir el email, ofrecer reunión para carpeta de inspecciones.\n\n### D) SI menciona inspección, multa, acta o clausura:\n\nOfrece coordinar una llamada para ver el tema\n\n### E) SI dice \"lo voy a pensar\":\n\n- Si el contexto es carnet individual:\n\"Dale, tomá tu tiempo. Te comento que el proceso es 100% online, en 5 minutos completás la inscripción y en 72 hs hábiles tenés el carnet en tu email. ¿Hay algo puntual que te genera duda?\"\n\n- Si el contexto es otro servicio (auditoría, plan anual, etc.):\n\"Hacemos una llamada rápida y resolvemos. ¿Cuando te queda mejor?\n\n### F) SI dice \"ya tenemos proveedor\":\n\"¿Están 100% cubiertos o hay algo que te preocupa? En 10 min te digo si hay algún hueco.\"\n\n### G) SI dice \"no me interesa\":\n\n- Si el contexto es carnet individual:\n\"¿Ya contás con el carnet vigente o todavía no lo tramitaste?\"\n→ Si no lo tiene: redirigí al link https://www.optingsha.com.ar/carnet_manipuladores2.php\n→ Si ya lo tiene: \"👍\"\n\n- Si el contexto es otro servicio (auditoría, plan anual, etc.):\n\"¿Lo decís porque ya lo tienen resuelto o porque no lo gestionan ustedes?\"\n\n### H) SI pregunta precio de auditoría o plan anual:\n\"Depende del tamaño del negocio. ¿Cuántos locales tenés? ¿Cuántos empleados? Lo vemos en 10 min.\"\n\n### I) SI pide hablar con soporte o tiene algun inconveniente con el curso: \n\"Entiendo, ¿Chequeaste cargando desde la PC o con conexión del celular al Wifi?\n\nSí el problema sigue, comunicate con soporte técnico de 8 a 13:00 hs \nde lunes a viernes al +5491133610471\n\nQue tengas un buen día.\"\n\n### J) Si consulta por cualquier otro servicio o cosa no especificada: hazle saber que vas a revisar y le avisas\n\n### K) Si confirmo la compra: agradecele \n\n### M) Si tiene cualquier tipo de inconveniente con el curso ya sean los accesos o el certificado: recordale que\nlos accesos y certificado deben llegar automaticamente, sino se puede comunicar con soporte técnico de 8 a 13:00 hs \nde lunes a viernes al +5491133610471\n\n!IMPORTANTE! nunca ofrezcas llamadas por este tipo de inconvenientes\n\n---\n\n## REGLAS DE COMPORTAMIENTO\n\n2. Mensajes cortos: 3-4 líneas máximo (excepción: info completa del curso en paso 4A)\n3. Siempre terminá con una pregunta\n5. No vendas planes por chat → solo agendá reunión\n6. Tono argentino: \"vos\", \"dale\", \"genial\", \"¿cómo andás?\"\n7. Máximo 2 emojis por mensaje\n8. Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n9. Nunca menciones el nombre del cliente al formular la respuesta\n10- ante cualquier problema no agendes llamada sino deriva con el soporte tecnico\n11 -  No ofrezcas blindaje legal a particulares, solo a dueños de comercio o empresa\n\n---\n\n## LINKS\n- Carnet individual: https://www.optingsha.com.ar/carnet_manipuladores.php\n- Presupuesto empresa: https://www.optingsha.com.ar/carnet_manipuladores.php#empresa\n\n---\n\n## CHECKLIST ANTES DE CADA RESPUESTA\n\n- Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n- ¿Estoy usando el mensaje exacto del paso correspondiente?\n- ¿El mensaje termina con una pregunta?\n- ¿Es corto (3-4 líneas, salvo paso 4A)?\n- SIEMPRE pregunta si el carnet es para el o para sus empleados\n- Si dijo que es para empleados, SIEMPRE preguntar primero cuántos antes de dar link\n- ≤4 empleados o individual → link de pago directo (carnet_manipuladores2.php)\n- >4 empleados → link de presupuesto (#empresa)\n- NUNCA saltearse el paso 2 ni el paso 2b"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -9760,
+        0
+      ],
+      "id": "133bcf97-a3bc-4e4a-b360-9490c7ae3d8b",
+      "name": "RAG Agent1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-20250514",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -9760,
+        192
+      ],
+      "id": "7dac2100-d2ac-4ff2-aa7b-85b53c6f9862",
+      "name": "Anthropic Chat Model1",
+      "credentials": {
+        "anthropicApi": {
+          "id": "x1cMDDSv3RoaFkK5",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "4mtNYrLqBUhzwLjA",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/4mtNYrLqBUhzwLjA",
+          "cachedResultName": "notificacion llamada"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('lead_name', ``, 'string') }}",
+            "confirmation_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('confirmation_text', ``, 'string') }}",
+            "raw_from_agent": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('raw_from_agent', ``, 'string') }}",
+            "whatsapp_id": "={{ $('Normalice').item.json.body.conversation.contact_inbox.source_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_name",
+              "displayName": "lead_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "lead_number",
+              "displayName": "lead_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "confirmation_text",
+              "displayName": "confirmation_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "raw_from_agent",
+              "displayName": "raw_from_agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "whatsapp_id",
+              "displayName": "whatsapp_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -9504,
+        208
+      ],
+      "id": "5cc342f8-7ba2-4824-b197-1c93ebdca5d3",
+      "name": "agendo llamada1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar el payload para YCloud WhatsApp API\nconst phoneFrom =  $('Webhook').first().json.body.whatsappInboundMessage.to;\nconst phoneTo = $('Webhook').first().json.body.whatsappInboundMessage.from;\nconst messageText = $input.first().json.output;\n\nreturn {\n  from: phoneFrom,\n  to: phoneTo,\n  type: \"text\",\n  text: {\n    body: messageText,\n    preview_url: true\n  }\n};"
+      },
+      "id": "72a89f4c-2a9d-47ff-9698-cf58ac503979",
+      "name": "Preparar Payload WhatsApp1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9296,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "e2bb8a4e15e2ce381c4acd6c2bda500e"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -9024,
+        0
+      ],
+      "id": "c77570b2-96a8-4a62-905c-13d484255f92",
+      "name": "Enviar WhatsApp YCloud1"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }}",
+        "tableName": "chat_histories",
+        "contextWindowLength": 7
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -9664,
+        192
+      ],
+      "id": "c5130b86-7579-478c-90c1-60762fb451f2",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ebc22e7b-fb24-4aff-96dd-db11ba882e02",
+              "leftValue": "={{ $('Parsear Mensaje').item.json.to }}",
+              "rightValue": "=+5491141872290",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -10800,
+        48
+      ],
+      "id": "2028f812-ddeb-4479-9236-341612b8d6ba",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "2YochB7js8uLgbyG",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/2YochB7js8uLgbyG",
+          "cachedResultName": "0pting -  Estado seguimiento"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -10240,
+        656
+      ],
+      "id": "2a1b6b62-b917-4f26-9b29-02375853fbd2",
+      "name": "Call '0pting -  Estado seguimiento'1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET estado_chat = estado_chat + 1 WHERE phone = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -8320,
+        96
+      ],
+      "id": "2bc28b60-399d-4a4c-b702-abf7662ee260",
+      "name": "SQL - Cancelar Seguimiento",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "opting",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -13008,
+        64
+      ],
+      "id": "4998f72d-f72c-481d-ad14-228085543ae7",
+      "name": "Webhook",
+      "webhookId": "35a3deda-c7c4-4264-b90f-c1b73f849fee"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e975c1c7-987e-4085-8785-4445283f28db",
+              "leftValue": "={{ $json.to }}",
+              "rightValue": "+5491123312054",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -10720,
+        896
+      ],
+      "id": "2efce45e-9e58-4b3b-b897-5e047782f147",
+      "name": "If4"
+    },
+    {
+      "parameters": {
+        "errorMessage": "a"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -11664,
+        -352
+      ],
+      "id": "9721cfe7-4843-4962-9e6a-68b601866536",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(l.chat_activo, 0) AS chat_activo,\n  COALESCE(l.phone, $1) AS phone\nFROM (SELECT 1) dummy\nLEFT JOIN leads_outbound l ON l.phone = $1\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.body.whatsappInboundMessage.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -12240,
+        -432
+      ],
+      "id": "d25904c2-4dd0-47e5-8b24-4de8d7a82a50",
+      "name": "SQL -  Traer estado del chat",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6d52bd36-b56f-411d-a5e3-2094e1ea8d73",
+              "leftValue": "={{ $json.chat_activo }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -11984,
+        -432
+      ],
+      "id": "f6a6535e-cd81-4b9b-b547-a40c31dc00e4",
+      "name": "esta activo?",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "tableId": "leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "phone",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.from }}"
+            },
+            {
+              "fieldId": "phone_from",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.to }}"
+            },
+            {
+              "fieldId": "nombre",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.customerName }}"
+            },
+            {
+              "fieldId": "mensaje_inicial",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.messageBody }}"
+            },
+            {
+              "fieldId": "wamid",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.wamid }}"
+            },
+            {
+              "fieldId": "waba_id",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.wabaId }}"
+            },
+            {
+              "fieldId": "tipo_mensaje",
+              "fieldValue": "=."
+            },
+            {
+              "fieldId": "timestamp_mensaje",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.timestamp }}"
+            },
+            {
+              "fieldId": "dentro_horario",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.dentroDeHorario }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "estado_chat",
+              "fieldValue": "1"
+            }
+          ]
+        }
+      },
+      "name": "Guardar Lead inbound",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -8672,
+        112
+      ],
+      "id": "4796d329-ee71-4f68-b2f4-f56d4a4842ed",
+      "credentials": {
+        "supabaseApi": {
+          "id": "HzCSuC5VeQmhADg5",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(l.chat_activo, 0) AS chat_activo,\n  COALESCE(l.phone, $1) AS phone\nFROM (SELECT 1) dummy\nLEFT JOIN leads l ON l.phone = $1\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.body.whatsappInboundMessage.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -12240,
+        -240
+      ],
+      "id": "88b28978-af46-423d-9405-9a3973c4ecd1",
+      "name": "SQL -  Traer estado del chat1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6d52bd36-b56f-411d-a5e3-2094e1ea8d73",
+              "leftValue": "={{ $json.chat_activo }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -11984,
+        -240
+      ],
+      "id": "ee02124d-c10b-442d-ae92-6f754583cf19",
+      "name": "esta activo?1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "88bf44e3-f1a2-4405-a32d-ddd5cacf2780",
+              "leftValue": "={{ $json.body.whatsappInboundMessage.to }}",
+              "rightValue": "+5491123312054",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -12464,
+        -336
+      ],
+      "id": "096cff59-f96c-4eb3-a836-0915d040cea4",
+      "name": "If5"
+    },
+    {
+      "parameters": {
+        "tableId": "leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "phone",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.from }}"
+            },
+            {
+              "fieldId": "phone_from",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.to }}"
+            },
+            {
+              "fieldId": "nombre",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.customerName }}"
+            },
+            {
+              "fieldId": "mensaje_inicial",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.messageBody }}"
+            },
+            {
+              "fieldId": "wamid",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.wamid }}"
+            },
+            {
+              "fieldId": "waba_id",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.wabaId }}"
+            },
+            {
+              "fieldId": "tipo_mensaje",
+              "fieldValue": "=."
+            },
+            {
+              "fieldId": "timestamp_mensaje",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.timestamp }}"
+            },
+            {
+              "fieldId": "dentro_horario",
+              "fieldValue": "={{ $('Parsear Mensaje').item.json.dentroDeHorario }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "estado_chat",
+              "fieldValue": "1"
+            }
+          ]
+        }
+      },
+      "name": "Guardar Lead inbound1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -8640,
+        848
+      ],
+      "id": "4c8b5900-7ac8-49c3-bade-fba33beb4502",
+      "credentials": {
+        "supabaseApi": {
+          "id": "HzCSuC5VeQmhADg5",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET estado_chat = estado_chat + 1 WHERE phone = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -8528,
+        816
+      ],
+      "id": "5b585f3c-9ec2-4518-8325-e5fa034c6e02",
+      "name": "SQL - Cancelar Seguimiento2",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }}",
+        "tableName": "chat_histories",
+        "contextWindowLength": 7
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -9600,
+        1072
+      ],
+      "id": "0419f5dc-9e85-4a24-a262-eb3cc6c3b2b2",
+      "name": "Postgres Chat Memory1",
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "e2bb8a4e15e2ce381c4acd6c2bda500e"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -8896,
+        880
+      ],
+      "id": "e90212d6-cc57-4efa-bcaa-c2201354d0dc",
+      "name": "Enviar WhatsApp YCloud"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar el payload para YCloud WhatsApp API\nconst phoneFrom =  $('Webhook').first().json.body.whatsappInboundMessage.to;\nconst phoneTo = $('Webhook').first().json.body.whatsappInboundMessage.from;\nconst messageText = $input.first().json.output;\n\nreturn {\n  from: phoneFrom,\n  to: phoneTo,\n  type: \"text\",\n  text: {\n    body: messageText,\n    preview_url: true\n  }\n};"
+      },
+      "id": "f0956ee6-2edd-4619-99ae-d6db1b65f7ca",
+      "name": "Preparar Payload WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9168,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "4mtNYrLqBUhzwLjA",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/4mtNYrLqBUhzwLjA",
+          "cachedResultName": "notificacion llamada"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('lead_name', ``, 'string') }}",
+            "confirmation_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('confirmation_text', ``, 'string') }}",
+            "raw_from_agent": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('raw_from_agent', ``, 'string') }}",
+            "whatsapp_id": "={{ $('Normalice').item.json.body.conversation.contact_inbox.source_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_name",
+              "displayName": "lead_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "lead_number",
+              "displayName": "lead_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "confirmation_text",
+              "displayName": "confirmation_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "raw_from_agent",
+              "displayName": "raw_from_agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "whatsapp_id",
+              "displayName": "whatsapp_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -9440,
+        1088
+      ],
+      "id": "218f9068-51c2-4295-961a-fde5d724a182",
+      "name": "agendo llamada"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-20250514",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -9696,
+        1072
+      ],
+      "id": "8453b52d-7e85-4f08-a656-d09ca68bb240",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "x1cMDDSv3RoaFkK5",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.messageBody }}",
+        "options": {
+          "systemMessage": "=## IDENTIDAD\nSos Tomas, asistente virtual de Opting (Seguridad e Higiene). Atendés consultas sobre seguridad e higiene laboral para comercios y locales gastronómicos.\n\n---\n\nTu objetivo es calificar al prospecto y agendar una llamada para presentarle el servicio de Seguridad e Higiene.\n\n🚨 REGLAS ABSOLUTAS (CRÍTICA – PRIORIDAD MÁXIMA)\n\n❌ NO hagas múltiples preguntas en un solo mensaje\n❌ NO te presentes mas de una vez, solo en el mensaje inicial\n❌ No te salgas de las instrucciones, si el cliente pide algo u ofrece algo fuera de lo mencionado en las instrucciones, decí que lo vas a derivar\n❌ Si no quieren agendar, no insistas\n❌ No menciones el nombre del cliente al formular la respuesta\n\n🚨 REGLA CRÍTICA SOBRE LLAMADAS (PRIORIDAD MÁXIMA)\n\n❌ NUNCA digas que vas a llamar a alguien\n❌ NUNCA uses el recurso llamada para resolver problemas\n❌ NUNCA ofrezcas llamar al cliente\n❌ NUNCA llames por temas técnicos, soporte o atención al cliente\n❌ NUNCA uses llamadas para reclamos, inconvenientes o consultas operativas\n\n✅ SOLO podés agendar llamadas con fines comerciales o de ventas\n✅ La llamada es únicamente para presentar el servicio de Seguridad e Higiene\n✅ Siempre se agenda con link de Calendly o coordinando horario\n✅ Ante cualquier problema técnico, soporte o atención al cliente → DERIVAR\n\n📌 Regla obligatoria:\nLas llamadas SOLO se usan para agendar reuniones comerciales.\nLas llamadas NUNCA se usan para soporte, atención al cliente o resolución de problemas.\n\n📌 Si el cliente tiene un problema, reclamo, inconveniente, duda operativa o técnica:\nResponder que lo vas a derivar a atención al cliente.\n\nEjemplo de derivación:\n\"Perfecto, eso lo ve el equipo de atención al cliente. Te los derivo así pueden ayudarte.\"\n\n---\n\n🚨 REGLA PRINCIPAL:\nTu único objetivo es conseguir los datos del dueño y agendar una llamada. No cotices precios ni des detalles del servicio por chat. Todo se resuelve en la llamada.\n\nSI NO HAY NADA QUE RESPONDER: Devuelve un simple \"👍\"\n\n---\n\n## FLUJO DE CONVERSACIÓN\n\n**1. Saludo inicial**\n\"Hola! Soy Tomas de Opting ¿Cómo estás?\nDecime, ¿con quién tengo el gusto? ¿Sos el dueño o encargado del local?\"\n\n---\n\n**2. Confirmar que es el decisor**\n\nSi confirma que es el dueño/encargado → pasar al paso 3.\n\nSi no es el decisor:\n\"Perfecto, ¿me podés pasar con el dueño o encargado? Necesito hablar con quien toma las decisiones del negocio.\"\n\n---\n\n**3. Averiguar cantidad de sucursales**\n\nPreguntá:\n\"¿Tenés un solo local o más de uno?\"\n\n→ Si tiene un solo local: pasar al paso 4  \n→ Si tiene varios:\n\n\"Genial, ¿cuántos locales en total?\"\n\n---\n\n**4. Averiguar si cuenta con presupuesto**\n\n\"Perfecto, por 650.000ARS anuales por local quedas completamente cubierto, ¿contás con ese presupuesto?\"\n\n---\n\n**5. Agendar la llamada**\n\n\"Perfecto. Lo que hacemos es una llamada rápida de 10 minutos donde te cuento cómo podemos cubrir tu negocio ante inspecciones y multas, sin complicaciones.\nDecime cuándo te queda mejor y te pido si me pasás un mail?\"\n\nHorarios para agendar llamada:\nlunes a viernes de 9 a 18 (días hábiles)\n\n---\n\n**6. Si ya agendó**\n\n\"Buenísimo, quedamos para esa llamada. Cualquier consulta estoy por acá.\nTe hago otra consulta, ¿ya tenés un servicio de Seguridad e Higiene vigente?\"\n\n---\n\n**7. Si pregunta de qué se trata el servicio antes de agendar**\n\n\"En la llamada te explico todo en detalle, pero en resumen: te cubrimos ante inspecciones, multas y clausuras durante todo el año.\n¿Agendamos los 10 minutos?\"\n\n---\n\n**8. Si pregunta precio**\n\n\"El valor depende de la cantidad de locales y el rubro. En la llamada te armo un presupuesto exacto.\n¿Cuándo hablamos?\"\n\n---\n\n**9. Si hace cualquier tipo de consulta relacionada al carnet de manipulacion de alimentos/curso/certificado**\n\nDerivar al número encargado:\n\n+54 9 11 3361-0471\n\n\"Perfecto, eso lo ve el equipo encargado del carnet de manipulación.\nTe paso el número para que puedan ayudarte directamente:\n+54 9 11 3361-0471\"\n\n---\n\n### C) SI menciona inspección, multa, acta o clausura\n\n\"Justamente para eso estamos. Hacemos una llamada y lo resolvemos.\n¿Coordinamos por acá o preferís agendarla?\n\n👉 https://calendly.com/optingsha-info/30min\"\n\n---\n\n### D) SI dice \"lo voy a pensar\"\n\n\"Dale, tomá tu tiempo. Te recuerdo que una inspección no avisa.\n¿Hay algo puntual que te genera duda?\"\n\n→ Si insiste en que necesita tiempo:\n\n\"👍 Quedamos en contacto.\"\n\n---\n\n### E) SI dice \"ya tenemos proveedor\"\n\n\"¿Están 100% cubiertos o hay algo que te preocupa?\nEn 10 min te digo si hay algún hueco.\"\n\n---\n\n### F) SI dice \"no me interesa\"\n\n\"¿Lo decís porque ya lo tienen resuelto o porque no lo gestionan ustedes?\"\n\n---\n\n### G) SI consulta por cualquier otro tema no especificado\n\n\"Eso lo vemos en la llamada.\n¿Agendamos los 10 minutos?\n\n👉 https://calendly.com/optingsha-info/30min\"\n\nSI no quiere agendar la llamada:\n\n\"dejame que lo consulto y te digo\"\n\n---\n\n### H) SI confirma la compra o cierre\n\nAgradecer y confirmar que el equipo se va a contactar.\n\n---\n\n### I) SI hay problemas técnicos, soporte, reclamos, consultas operativas o atención al cliente\n\nResponder:\n\n\"Perfecto, eso lo ve el equipo de atención al cliente.\nTe los derivo así pueden ayudarte.\"\n\nNUNCA ofrecer llamada en estos casos.\n\n---\n\n## REGLAS DE COMPORTAMIENTO\n\n1. Usá siempre el nombre del usuario si lo tenés\n2. Mensajes cortos: 3-4 líneas máximo\n3. Siempre terminá con una pregunta\n4. Preguntas binarias: \"¿Hoy o mañana?\" en lugar de \"¿Querés agendar?\"\n5. No vendas planes por chat → solo agendá reunión\n6. Tono argentino: \"vos\", \"dale\", \"genial\", \"¿cómo andás?\"\n7. Máximo 2 emojis por mensaje\n8. Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n9. Nunca menciones el nombre del cliente al formular la respuesta\n10. Ante cualquier inconveniente derivar a soporte\n11. Las llamadas SOLO se agendan para ventas\n12. NUNCA decir que vas a llamar\n13. NUNCA usar llamadas para soporte o atención al cliente\n\n---\n\n## CHECKLIST ANTES DE CADA RESPUESTA\n\n- Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n- ¿Estoy usando el mensaje exacto del paso correspondiente?\n- ¿El mensaje termina con una pregunta?\n- ¿Es corto (3-4 líneas)?\n- ¿Conseguí el nombre del dueño y la cantidad de locales antes de agendar?\n- ¿Estoy intentando agendar solo si es un caso comercial?\n- ¿Evité ofrecer llamadas para soporte?\n- ¿Derivé a atención al cliente si corresponde?\n- NUNCA des precios ni detalles del servicio por chat, todo va a la llamada"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -9696,
+        880
+      ],
+      "id": "71916f66-76c7-4a83-b09b-0bf0c5542ec8",
+      "name": "RAG Agent"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "seguimiento_whatsapp",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "phone",
+              "condition": "eq",
+              "keyValue": "={{ $json.from }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "responded",
+              "fieldValue": "true"
+            }
+          ]
+        }
+      },
+      "name": "Marcar Respondido",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -10240,
+        1024
+      ],
+      "id": "704c22fe-df1a-41ea-ab43-df2dd74cc11c",
+      "credentials": {
+        "supabaseApi": {
+          "id": "HzCSuC5VeQmhADg5",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO message_buffer (phone, phone_to, message_body, customer_name, wamid, waba_id, timestamp_msg, dentro_horario, batch_id, created_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())\nON CONFLICT DO NOTHING;",
+        "options": {
+          "queryReplacement": "=={{ $json.from }},={{ $json.to }},={{ $json.messageBody }},={{ $json.customerName }},={{ $json.wamid }},={{ $json.wabaId }},={{ $json.timestamp }},={{ $json.dentroDeHorario }},={{ $json.batchId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -12048,
+        64
+      ],
+      "id": "6fdfa374-ecea-4796-a334-ad68f1662ca4",
+      "name": "Guardar en Buffer",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const from = $('Parsear Mensaje').item.json.from;\nconst batchId = `${from}_${Date.now()}`;\n\nreturn {\n  ...$('Parsear Mensaje').item.json,\n  batchId\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12240,
+        64
+      ],
+      "id": "1aa9b249-976f-49d1-a85e-5843ca085c2f",
+      "name": "Generar Batch ID"
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -11856,
+        64
+      ],
+      "id": "6e454244-5178-436c-b771-255ac600604d",
+      "name": "Wait 10s",
+      "webhookId": "efebdd3e-fb62-495f-834b-32ae1e5509d1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM message_buffer\nWHERE phone = $1\n  AND processed = false\nORDER BY created_at ASC;",
+        "options": {
+          "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -11664,
+        64
+      ],
+      "id": "d6b557f8-f000-4f6a-bead-1af950d8cc40",
+      "name": "Leer Mensajes Buffer",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const mensajes = $input.all().map(i => i.json);\nconst miBatchId = $('Generar Batch ID').item.json.batchId;\n\nif (mensajes.length === 0) {\n  return { continuar: false, mensajeCombinado: '' };\n}\n\nconst ultimoMensaje = mensajes[mensajes.length - 1];\nconst soyElUltimo = ultimoMensaje.batch_id === miBatchId;\n\nif (!soyElUltimo) {\n  return { continuar: false, mensajeCombinado: '' };\n}\n\nconst mensajeCombinado = mensajes\n  .map(m => m.message_body)\n  .filter(Boolean)\n  .join('\\n');\n\nconst ids = mensajes.map(m => m.id);\n\nreturn {\n  continuar: true,\n  mensajeCombinado,\n  bufferIds: ids,\n  from: mensajes[0].phone,\n  to: mensajes[0].phone_to,\n  customerName: mensajes[0].customer_name,\n  wamid: ultimoMensaje.wamid,\n  wabaId: ultimoMensaje.waba_id,\n  timestamp: ultimoMensaje.timestamp_msg,\n  dentroDeHorario: ultimoMensaje.dentro_horario\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11472,
+        64
+      ],
+      "id": "06d808a2-267a-4656-86fa-11e216b65b14",
+      "name": "Verificar y Concatenar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "buf-check-001",
+              "leftValue": "={{ $json.continuar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c429126b-a640-4d8c-8668-5d6e22848adb",
+              "leftValue": "={{ $('Parsear Mensaje').item.json.esMensajeReciente }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -11280,
+        64
+      ],
+      "id": "bd86229a-8d28-462d-97d2-21879f168eba",
+      "name": "Soy el ultimo?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Verificar y Concatenar').item.json;\n\nreturn {\n  from: data.from,\n  to: data.to,\n  customerName: data.customerName,\n  messageBody: data.mensajeCombinado,\n  wamid: data.wamid,\n  wabaId: data.wabaId,\n  timestamp: data.timestamp,\n  dentroDeHorario: data.dentroDeHorario\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11008,
+        48
+      ],
+      "id": "2ffffaf4-bf48-418c-9408-3e2f0fecd351",
+      "name": "Preparar para Flujo"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE message_buffer\nSET processed = true\nWHERE id = ANY(string_to_array($1, ',')::int[]);",
+        "options": {
+          "queryReplacement": "={{\n  (Array.isArray($('Verificar y Concatenar').first().json.bufferIds)\n    ? $('Verificar y Concatenar').first().json.bufferIds\n    : [ $('Verificar y Concatenar').first().json.bufferIds ]\n  )\n  .map((x) => Number(x))\n  .filter((x) => Number.isFinite(x))\n  .join(',')\n}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -10784,
+        -192
+      ],
+      "id": "b3072512-1fe5-4125-8792-0341bd48ac41",
+      "name": "Marcar Buffer Procesado1",
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "926068f2-daf4-47ef-8d22-c1bcb1ddc8ac",
+      "name": "Guardar Seguimiento inbound",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -8672,
+        -64
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO seguimiento_whatsapp (phone, phone_from, customer_name, last_bot_message_at, responded)\nVALUES ($1, $2, $3, $4, false)\nON CONFLICT (phone) DO UPDATE SET\n  phone_from = EXCLUDED.phone_from,\n  customer_name = EXCLUDED.customer_name,\n  last_bot_message_at = EXCLUDED.last_bot_message_at,\n  responded = false;",
+        "options": {
+          "queryReplacement": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }},={{ $('Webhook').first().json.body.whatsappInboundMessage.to }},={{ $('Parsear Mensaje').item.json.customerName }},={{ new Date().toISOString() }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "uGGhyk491RbNedD2",
+          "name": "Postgres account 2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Parsear Mensaje": {
+      "main": [
+        [
+          {
+            "node": "Generar Batch ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "RAG Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RAG Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Agent1": {
+      "main": [
+        [
+          {
+            "node": "Preparar Payload WhatsApp1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agendo llamada1": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Payload WhatsApp1": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp YCloud1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp YCloud1": {
+      "main": [
+        [
+          {
+            "node": "Guardar Lead inbound",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Guardar Seguimiento inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "RAG Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Marcar Respondido1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parsear Mensaje",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If4": {
+      "main": [
+        [
+          {
+            "node": "Call '0pting -  Estado seguimiento'1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Marcar Respondido",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RAG Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL -  Traer estado del chat": {
+      "main": [
+        [
+          {
+            "node": "esta activo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "esta activo?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Lead inbound": {
+      "main": [
+        [
+          {
+            "node": "SQL - Cancelar Seguimiento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SQL - Cancelar Seguimiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL -  Traer estado del chat1": {
+      "main": [
+        [
+          {
+            "node": "esta activo?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "esta activo?1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If5": {
+      "main": [
+        [
+          {
+            "node": "SQL -  Traer estado del chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SQL -  Traer estado del chat1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Lead inbound1": {
+      "main": [
+        [
+          {
+            "node": "SQL - Cancelar Seguimiento2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SQL - Cancelar Seguimiento2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Payload WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp YCloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agendo llamada": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Agent": {
+      "main": [
+        [
+          {
+            "node": "Preparar Payload WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Buffer": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar Batch ID": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Leer Mensajes Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Mensajes Buffer": {
+      "main": [
+        [
+          {
+            "node": "Verificar y Concatenar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar y Concatenar": {
+      "main": [
+        [
+          {
+            "node": "Soy el ultimo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soy el ultimo?": {
+      "main": [
+        [
+          {
+            "node": "Preparar para Flujo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar para Flujo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar para Flujo": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Marcar Buffer Procesado1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed"
+  },
+  "staticData": {
+    "node:Check Seguimientos": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "mia-n8n.w9weud.easypanel.host",
+            "user-agent": "Go-http-client/2.0",
+            "content-length": "582",
+            "accept-encoding": "gzip",
+            "baggage": "Eagleeye-Pappname=1fof0zltrv1@d3b96e44a5c9fa6,Eagleeye-Prpc=",
+            "content-type": "application/json",
+            "traceparent": "00-b57c3f260d4948d7eb46af74279aa562-ad8f045731ca6a45-00",
+            "x-forwarded-for": "8.219.65.77",
+            "x-forwarded-host": "mia-n8n.w9weud.easypanel.host",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "61a01b9f8eee",
+            "x-real-ip": "8.219.65.77",
+            "x-webhook-endpoint-id": "698e52247927f7483225574e",
+            "ycloud-signature": "t=1776221628,s=37c0a3403ed60374efa37cc95e6916c7f2e97fc543b133ed04a3aa94d7810b3a"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "id": "evt_69defdbcfe88e338ef689890",
+            "type": "whatsapp.inbound_message.received",
+            "apiVersion": "v2",
+            "createTime": "2026-04-15T02:53:48.482Z",
+            "whatsappInboundMessage": {
+              "id": "69defdbccb51666ee30ddd43",
+              "wamid": "wamid.HBgNNTQ5MTE1MTEzNTA0MRUCABIYIEFDRjlFOTRCQTQ4QTg2RDY1QjM4RjgyNURGNkMyMzY2AA==",
+              "wabaId": "1647925726370112",
+              "from": "+5491151135041",
+              "customerProfile": {
+                "name": "Yamila BARRERA⚖️"
+              },
+              "to": "+5491141872290",
+              "sendTime": "2026-04-15T02:53:47.000Z",
+              "type": "text",
+              "text": {
+                "body": "Buenas me solicitaron libreta sanitaria y curso de manipulación de alimentos, esto me serviría?"
+              }
+            }
+          },
+          "webhookUrl": "https://mia-n8n.w9weud.easypanel.host/webhook/opting",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "versionId": "5ea4b062-8847-4ad9-9957-265ee777bcd9",
+  "activeVersionId": "5ea4b062-8847-4ad9-9957-265ee777bcd9",
+  "versionCounter": 1649,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-02-12T22:21:29.433Z",
+      "createdAt": "2026-02-12T22:21:29.433Z",
+      "role": "workflow:owner",
+      "workflowId": "PxrfRFfaX-QGTqBlh2992",
+      "projectId": "sKtCrdb8EegICcr5",
+      "project": {
+        "updatedAt": "2025-08-07T04:12:58.349Z",
+        "createdAt": "2025-08-06T15:49:43.505Z",
+        "id": "sKtCrdb8EegICcr5",
+        "name": "federico suarez <fedesuarez16@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "1a055ca0-60d6-4e74-813b-dd571d1e3a32"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-25T05:36:54.655Z",
+    "createdAt": "2026-04-25T05:36:54.655Z",
+    "versionId": "5ea4b062-8847-4ad9-9957-265ee777bcd9",
+    "workflowId": "PxrfRFfaX-QGTqBlh2992",
+    "nodes": [
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "seguimiento_whatsapp",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "phone",
+                "condition": "eq",
+                "keyValue": "={{ $json.from }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "responded",
+                "fieldValue": "true"
+              }
+            ]
+          }
+        },
+        "name": "Marcar Respondido1",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -10448,
+          256
+        ],
+        "id": "246aedf1-4ffa-4ca4-91dc-7bb072476191",
+        "credentials": {
+          "supabaseApi": {
+            "id": "HzCSuC5VeQmhADg5",
+            "name": "Supabase account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// ── 1. EXTRAER DATOS DEL MENSAJE YCLOUD ──────────────────────────────────────\nconst body = $input.item.json.body;\nconst whatsappMsg = body.whatsappInboundMessage;\n\nconst messageId    = whatsappMsg.id;\nconst wamid        = whatsappMsg.wamid;\nconst from         = whatsappMsg.from;\nconst to           = whatsappMsg.to;\nconst customerName = whatsappMsg.customerProfile?.name || 'Cliente';\nconst messageType  = whatsappMsg.type;\nconst messageBody  = whatsappMsg.text?.body || '';\nconst timestamp = new Date(whatsappMsg.sendTime).toISOString();\nconst wabaId       = whatsappMsg.wabaId;\nconst eventType    = body.type;\nconst eventId      = body.id;\n\n// ── 2. CALCULAR HORARIO DE ATENCIÓN (Argentina UTC-3) ────────────────────────\nconst fecha = typeof timestamp === 'number'\n  ? new Date(timestamp)\n  : new Date(timestamp);\n\nconst offsetArg  = -3;\nconst horaArg    = new Date(fecha.getTime() + offsetArg * 60 * 60 * 1000);\n\nconst hora       = horaArg.getUTCHours();\nconst minutos    = horaArg.getUTCMinutes();\nconst dia        = horaArg.getUTCDay(); // 0 = domingo, 6 = sábado\n\nconst horaDecimal    = hora + minutos / 60;\nconst esDomingo      = dia === 0;\nconst dentroDeHorario = !esDomingo && horaDecimal >= 9 && horaDecimal < 18;\n\n// ── 3. FILTRAR MENSAJES VIEJOS ────────────────────────────────────────────────\nconst ahora      = Date.now();\nconst mensajeMs  = typeof timestamp === 'number'\n  ? timestamp\n  : new Date(timestamp).getTime();\n\nconst diferenciaMinutos = (ahora - mensajeMs) / 1000 / 60;\nconst esMensajeReciente = diferenciaMinutos <= 1;\n\n// ── 4. RETORNAR TODO JUNTO ────────────────────────────────────────────────────\nreturn {\n  messageId,\n  wamid,\n  from,\n  to,\n  customerName,\n  messageType,\n  messageBody,\n  timestamp,\n  wabaId,\n  eventType,\n  eventId,\n  dentroDeHorario,\n  esMensajeReciente\n};\n"
+        },
+        "id": "8e3394f4-5dc0-4587-94c7-cc67af4737ef",
+        "name": "Parsear Mensaje",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -12656,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "b0a34888-aa25-4e65-9ff1-5c62f1898cc5",
+                "leftValue": "={{ $json.dentroDeHorario }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -10448,
+          32
+        ],
+        "id": "d9d1b06d-06ec-42f8-b02e-c377fedda97c",
+        "name": "If"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.messageBody }}",
+          "options": {
+            "systemMessage": "=## IDENTIDAD\nSos Tomas, asistente virtual de Opting (Seguridad e Higiene). Atendés consultas sobre carnets de manipuladores, auditorías y planes anuales para locales gastronómicos.\n\n---\n\nTu objetivo es entender qué necesita el prospecto y guiarlo hacia la compra del Carnet de Manipulación de Alimentos (DIPA).\n\n🚨 REGLAS ABSOLUTAS (CRÍTICA – PRIORIDAD MÁXIMA)\n\n❌ NO hagas múltiples preguntas en un solo mensaje\n❌ NO te presentes mas de una vez, solo en el mensaje inicial\n❌ No te salgas de las instrucciones, si el cliente pide algo u ofrece algo fuera de lo mencionado en las intrucciones, deci que lo vas a derivar \n❌ Si no quieren comprar, no insistas\n❌ No menciones el nombre del cliente al formular la respuesta\n❌ NUNCA ofrezcas una llamada para solucionar un problema tecnico o por que no le llegan los accesos, solo ofrece llamadas para ventas\n\n\n🚨 REGLA PARA CARNET INDIVIDUAL:\nNunca ofrezcas agendar una reunión o llamada para cerrar la venta del carnet individual. El objetivo es siempre redirigir al link de inscripción:\n👉 https://www.optingsha.com.ar/carnet_manipuladores2.php\nSolo agendá reunión si el usuario pregunta por auditorías o planes anuales.\n\n\n\nSI NO HAY NADA QUE RESPONDER: Devuelve un un simple \"👍\"\n\n## FLUJO DE CONVERSACIÓN\n\n**1. Saludo inicial**\n- Si el usuario consulto por carnet de manipulacion de alimentos: \n\"Hola, soy Tomas de Opting. ¿Cómo estás? Comentame, ¿El carnet es para vos o sos el dueño/encargado de un local y es para tus empleados?\"\n\n**2. Identificar para quién es el carnet MUY IMPORTANTE QUE HAGAS ESTA PREGUNTA**\nPreguntá: \"¿El carnet es para vos o sos el dueño/encargado de un local y es para tus empleados?\"\n\n**2b. Si respondió que es para empleados → preguntar cantidad (NO saltearse este paso)**\nPreguntá: \"¿Para cuántos empleados necesitás el carnet?\"\n\n**3a. Si el carnet es para él mismo o para 4 empleados o menos**\nRespondé algo como esto:\n\n\"Para obtener tu Carnet Oficial (DIPA) con validez nacional por 3 años, solo tenés que completar tu inscripción en el siguiente link:\n👉 https://www.optingsha.com.ar/carnet_manipuladores2.php\n\nDetalles del servicio:\n✅ Precio: $22.990 (Final, incluye tasa de gestión)\n✅ Modalidad: 100% Online, a tu ritmo\n✅ Entrega: Recibís el carnet en tu email en 72 hs hábiles\n\nUna vez realizado el pago, el sistema te enviará los accesos al curso de forma automática. Exitos en el curso!\"\n\nACLARACION: usa esta informacion como contexto, el sistema le enviara los accesos automaticamente por mail, solo si paga a traves de link, si paga a travesde transferencia puede tardar entre 24 y 48hs en recibir los accesos\n\n**3b. Si es para más de 4 empleados de un local**\n\"Para Comercios/empresas con más de 4 empleados, te pido que nos envies un email haciendo click\nen el siguiente enlcae:\n\nhttps://www.optingsha.com.ar/carnet_manipuladores.php#empresa\n\nLuego hace click en el botón SOLICITAR PRESUPUESTO.\n\nA la brevedad te cotizo.\"\n\n  → SI muestra interés en seguridad e higiene:\n  \"Podemos agendar una reunión de 10 minutos y hacemos una breve presentación de los servicios para potenciar tu negocio. Que te parece\"\n\n  → SI dice que no le interesa o se despide:\n  \"Entonces espero que nos envíes tu email con la solicitud de presupuesto por los carnets. Te dejo nuevamente el enlace:\n  https://www.optingsha.com.ar/carnet_manipuladores.php#empresa\"\n\nACLARACION: Solo ofrece el servicio de seguridad e higiene si es el dueño de un local \n\n\n### C) SI pide pagar por transferencia o solicita CBU/alias:\n\n\"Hola [nombre], ¿cómo estás?\nTe paso: Alias optingsrl.bbva | CBU: 0170338020000030594238\n\nEnvianos el comprobante a este nuemro: +54 11 3361 0471 en 48 hs, si el pago está acreditado, te enviamos los accesos al curso. Tene en cuenta que si lo pagas a traves de la web es mas rapido y no tenes que esperar las 48 hs. \n¿Me dejás tu email? El carnet es para vos o para tus empleados?\"\n→ Luego de recibir el email, ofrecer reunión para carpeta de inspecciones.\n\n### D) SI menciona inspección, multa, acta o clausura:\n\nOfrece coordinar una llamada para ver el tema\n\n### E) SI dice \"lo voy a pensar\":\n\n- Si el contexto es carnet individual:\n\"Dale, tomá tu tiempo. Te comento que el proceso es 100% online, en 5 minutos completás la inscripción y en 72 hs hábiles tenés el carnet en tu email. ¿Hay algo puntual que te genera duda?\"\n\n- Si el contexto es otro servicio (auditoría, plan anual, etc.):\n\"Hacemos una llamada rápida y resolvemos. ¿Cuando te queda mejor?\n\n### F) SI dice \"ya tenemos proveedor\":\n\"¿Están 100% cubiertos o hay algo que te preocupa? En 10 min te digo si hay algún hueco.\"\n\n### G) SI dice \"no me interesa\":\n\n- Si el contexto es carnet individual:\n\"¿Ya contás con el carnet vigente o todavía no lo tramitaste?\"\n→ Si no lo tiene: redirigí al link https://www.optingsha.com.ar/carnet_manipuladores2.php\n→ Si ya lo tiene: \"👍\"\n\n- Si el contexto es otro servicio (auditoría, plan anual, etc.):\n\"¿Lo decís porque ya lo tienen resuelto o porque no lo gestionan ustedes?\"\n\n### H) SI pregunta precio de auditoría o plan anual:\n\"Depende del tamaño del negocio. ¿Cuántos locales tenés? ¿Cuántos empleados? Lo vemos en 10 min.\"\n\n### I) SI pide hablar con soporte o tiene algun inconveniente con el curso: \n\"Entiendo, ¿Chequeaste cargando desde la PC o con conexión del celular al Wifi?\n\nSí el problema sigue, comunicate con soporte técnico de 8 a 13:00 hs \nde lunes a viernes al +5491133610471\n\nQue tengas un buen día.\"\n\n### J) Si consulta por cualquier otro servicio o cosa no especificada: hazle saber que vas a revisar y le avisas\n\n### K) Si confirmo la compra: agradecele \n\n### M) Si tiene cualquier tipo de inconveniente con el curso ya sean los accesos o el certificado: recordale que\nlos accesos y certificado deben llegar automaticamente, sino se puede comunicar con soporte técnico de 8 a 13:00 hs \nde lunes a viernes al +5491133610471\n\n!IMPORTANTE! nunca ofrezcas llamadas por este tipo de inconvenientes\n\n---\n\n## REGLAS DE COMPORTAMIENTO\n\n2. Mensajes cortos: 3-4 líneas máximo (excepción: info completa del curso en paso 4A)\n3. Siempre terminá con una pregunta\n5. No vendas planes por chat → solo agendá reunión\n6. Tono argentino: \"vos\", \"dale\", \"genial\", \"¿cómo andás?\"\n7. Máximo 2 emojis por mensaje\n8. Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n9. Nunca menciones el nombre del cliente al formular la respuesta\n10- ante cualquier problema no agendes llamada sino deriva con el soporte tecnico\n11 -  No ofrezcas blindaje legal a particulares, solo a dueños de comercio o empresa\n\n---\n\n## LINKS\n- Carnet individual: https://www.optingsha.com.ar/carnet_manipuladores.php\n- Presupuesto empresa: https://www.optingsha.com.ar/carnet_manipuladores.php#empresa\n\n---\n\n## CHECKLIST ANTES DE CADA RESPUESTA\n\n- Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n- ¿Estoy usando el mensaje exacto del paso correspondiente?\n- ¿El mensaje termina con una pregunta?\n- ¿Es corto (3-4 líneas, salvo paso 4A)?\n- SIEMPRE pregunta si el carnet es para el o para sus empleados\n- Si dijo que es para empleados, SIEMPRE preguntar primero cuántos antes de dar link\n- ≤4 empleados o individual → link de pago directo (carnet_manipuladores2.php)\n- >4 empleados → link de presupuesto (#empresa)\n- NUNCA saltearse el paso 2 ni el paso 2b"
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 2,
+        "position": [
+          -9760,
+          0
+        ],
+        "id": "133bcf97-a3bc-4e4a-b360-9490c7ae3d8b",
+        "name": "RAG Agent1"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "claude-sonnet-4-20250514",
+            "mode": "list",
+            "cachedResultName": "Claude Sonnet 4"
+          },
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+        "typeVersion": 1.3,
+        "position": [
+          -9760,
+          192
+        ],
+        "id": "7dac2100-d2ac-4ff2-aa7b-85b53c6f9862",
+        "name": "Anthropic Chat Model1",
+        "credentials": {
+          "anthropicApi": {
+            "id": "x1cMDDSv3RoaFkK5",
+            "name": "Anthropic account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "4mtNYrLqBUhzwLjA",
+            "mode": "list",
+            "cachedResultUrl": "/workflow/4mtNYrLqBUhzwLjA",
+            "cachedResultName": "notificacion llamada"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "lead_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('lead_name', ``, 'string') }}",
+              "confirmation_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('confirmation_text', ``, 'string') }}",
+              "raw_from_agent": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('raw_from_agent', ``, 'string') }}",
+              "whatsapp_id": "={{ $('Normalice').item.json.body.conversation.contact_inbox.source_id }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "lead_name",
+                "displayName": "lead_name",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "lead_number",
+                "displayName": "lead_number",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": true
+              },
+              {
+                "id": "confirmation_text",
+                "displayName": "confirmation_text",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "raw_from_agent",
+                "displayName": "raw_from_agent",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "whatsapp_id",
+                "displayName": "whatsapp_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          -9504,
+          208
+        ],
+        "id": "5cc342f8-7ba2-4824-b197-1c93ebdca5d3",
+        "name": "agendo llamada1"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Preparar el payload para YCloud WhatsApp API\nconst phoneFrom =  $('Webhook').first().json.body.whatsappInboundMessage.to;\nconst phoneTo = $('Webhook').first().json.body.whatsappInboundMessage.from;\nconst messageText = $input.first().json.output;\n\nreturn {\n  from: phoneFrom,\n  to: phoneTo,\n  type: \"text\",\n  text: {\n    body: messageText,\n    preview_url: true\n  }\n};"
+        },
+        "id": "72a89f4c-2a9d-47ff-9698-cf58ac503979",
+        "name": "Preparar Payload WhatsApp1",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -9296,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-API-Key",
+                "value": "e2bb8a4e15e2ce381c4acd6c2bda500e"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -9024,
+          0
+        ],
+        "id": "c77570b2-96a8-4a62-905c-13d484255f92",
+        "name": "Enviar WhatsApp YCloud1"
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }}",
+          "tableName": "chat_histories",
+          "contextWindowLength": 7
+        },
+        "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+        "typeVersion": 1.3,
+        "position": [
+          -9664,
+          192
+        ],
+        "id": "c5130b86-7579-478c-90c1-60762fb451f2",
+        "name": "Postgres Chat Memory",
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "ebc22e7b-fb24-4aff-96dd-db11ba882e02",
+                "leftValue": "={{ $('Parsear Mensaje').item.json.to }}",
+                "rightValue": "=+5491141872290",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -10800,
+          48
+        ],
+        "id": "2028f812-ddeb-4479-9236-341612b8d6ba",
+        "name": "If2"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "2YochB7js8uLgbyG",
+            "mode": "list",
+            "cachedResultUrl": "/workflow/2YochB7js8uLgbyG",
+            "cachedResultName": "0pting -  Estado seguimiento"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": true
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          -10240,
+          656
+        ],
+        "id": "2a1b6b62-b917-4f26-9b29-02375853fbd2",
+        "name": "Call '0pting -  Estado seguimiento'1"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE leads SET estado_chat = estado_chat + 1 WHERE phone = $1;",
+          "options": {
+            "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -8320,
+          96
+        ],
+        "id": "2bc28b60-399d-4a4c-b702-abf7662ee260",
+        "name": "SQL - Cancelar Seguimiento",
+        "alwaysOutputData": true,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "opting",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -13008,
+          64
+        ],
+        "id": "4998f72d-f72c-481d-ad14-228085543ae7",
+        "name": "Webhook",
+        "webhookId": "35a3deda-c7c4-4264-b90f-c1b73f849fee"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "e975c1c7-987e-4085-8785-4445283f28db",
+                "leftValue": "={{ $json.to }}",
+                "rightValue": "+5491123312054",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -10720,
+          896
+        ],
+        "id": "2efce45e-9e58-4b3b-b897-5e047782f147",
+        "name": "If4"
+      },
+      {
+        "parameters": {
+          "errorMessage": "a"
+        },
+        "type": "n8n-nodes-base.stopAndError",
+        "typeVersion": 1,
+        "position": [
+          -11664,
+          -352
+        ],
+        "id": "9721cfe7-4843-4962-9e6a-68b601866536",
+        "name": "Stop and Error"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT\n  COALESCE(l.chat_activo, 0) AS chat_activo,\n  COALESCE(l.phone, $1) AS phone\nFROM (SELECT 1) dummy\nLEFT JOIN leads_outbound l ON l.phone = $1\nLIMIT 1;",
+          "options": {
+            "queryReplacement": "={{ $json.body.whatsappInboundMessage.from }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -12240,
+          -432
+        ],
+        "id": "d25904c2-4dd0-47e5-8b24-4de8d7a82a50",
+        "name": "SQL -  Traer estado del chat",
+        "alwaysOutputData": true,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "6d52bd36-b56f-411d-a5e3-2094e1ea8d73",
+                "leftValue": "={{ $json.chat_activo }}",
+                "rightValue": 0,
+                "operator": {
+                  "type": "number",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -11984,
+          -432
+        ],
+        "id": "f6a6535e-cd81-4b9b-b547-a40c31dc00e4",
+        "name": "esta activo?",
+        "alwaysOutputData": false
+      },
+      {
+        "parameters": {
+          "tableId": "leads",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "phone",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.from }}"
+              },
+              {
+                "fieldId": "phone_from",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.to }}"
+              },
+              {
+                "fieldId": "nombre",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.customerName }}"
+              },
+              {
+                "fieldId": "mensaje_inicial",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.messageBody }}"
+              },
+              {
+                "fieldId": "wamid",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.wamid }}"
+              },
+              {
+                "fieldId": "waba_id",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.wabaId }}"
+              },
+              {
+                "fieldId": "tipo_mensaje",
+                "fieldValue": "=."
+              },
+              {
+                "fieldId": "timestamp_mensaje",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.timestamp }}"
+              },
+              {
+                "fieldId": "dentro_horario",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.dentroDeHorario }}"
+              },
+              {
+                "fieldId": "created_at",
+                "fieldValue": "={{ new Date().toISOString() }}"
+              },
+              {
+                "fieldId": "estado_chat",
+                "fieldValue": "1"
+              }
+            ]
+          }
+        },
+        "name": "Guardar Lead inbound",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -8672,
+          112
+        ],
+        "id": "4796d329-ee71-4f68-b2f4-f56d4a4842ed",
+        "credentials": {
+          "supabaseApi": {
+            "id": "HzCSuC5VeQmhADg5",
+            "name": "Supabase account 2"
+          }
+        },
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT\n  COALESCE(l.chat_activo, 0) AS chat_activo,\n  COALESCE(l.phone, $1) AS phone\nFROM (SELECT 1) dummy\nLEFT JOIN leads l ON l.phone = $1\nLIMIT 1;",
+          "options": {
+            "queryReplacement": "={{ $json.body.whatsappInboundMessage.from }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -12240,
+          -240
+        ],
+        "id": "88b28978-af46-423d-9405-9a3973c4ecd1",
+        "name": "SQL -  Traer estado del chat1",
+        "alwaysOutputData": true,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "6d52bd36-b56f-411d-a5e3-2094e1ea8d73",
+                "leftValue": "={{ $json.chat_activo }}",
+                "rightValue": 0,
+                "operator": {
+                  "type": "number",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -11984,
+          -240
+        ],
+        "id": "ee02124d-c10b-442d-ae92-6f754583cf19",
+        "name": "esta activo?1",
+        "alwaysOutputData": false
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "88bf44e3-f1a2-4405-a32d-ddd5cacf2780",
+                "leftValue": "={{ $json.body.whatsappInboundMessage.to }}",
+                "rightValue": "+5491123312054",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -12464,
+          -336
+        ],
+        "id": "096cff59-f96c-4eb3-a836-0915d040cea4",
+        "name": "If5"
+      },
+      {
+        "parameters": {
+          "tableId": "leads",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "phone",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.from }}"
+              },
+              {
+                "fieldId": "phone_from",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.to }}"
+              },
+              {
+                "fieldId": "nombre",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.customerName }}"
+              },
+              {
+                "fieldId": "mensaje_inicial",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.messageBody }}"
+              },
+              {
+                "fieldId": "wamid",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.wamid }}"
+              },
+              {
+                "fieldId": "waba_id",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.wabaId }}"
+              },
+              {
+                "fieldId": "tipo_mensaje",
+                "fieldValue": "=."
+              },
+              {
+                "fieldId": "timestamp_mensaje",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.timestamp }}"
+              },
+              {
+                "fieldId": "dentro_horario",
+                "fieldValue": "={{ $('Parsear Mensaje').item.json.dentroDeHorario }}"
+              },
+              {
+                "fieldId": "created_at",
+                "fieldValue": "={{ new Date().toISOString() }}"
+              },
+              {
+                "fieldId": "estado_chat",
+                "fieldValue": "1"
+              }
+            ]
+          }
+        },
+        "name": "Guardar Lead inbound1",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -8640,
+          848
+        ],
+        "id": "4c8b5900-7ac8-49c3-bade-fba33beb4502",
+        "credentials": {
+          "supabaseApi": {
+            "id": "HzCSuC5VeQmhADg5",
+            "name": "Supabase account 2"
+          }
+        },
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE leads SET estado_chat = estado_chat + 1 WHERE phone = $1;",
+          "options": {
+            "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -8528,
+          816
+        ],
+        "id": "5b585f3c-9ec2-4518-8325-e5fa034c6e02",
+        "name": "SQL - Cancelar Seguimiento2",
+        "alwaysOutputData": true,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }}",
+          "tableName": "chat_histories",
+          "contextWindowLength": 7
+        },
+        "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+        "typeVersion": 1.3,
+        "position": [
+          -9600,
+          1072
+        ],
+        "id": "0419f5dc-9e85-4a24-a262-eb3cc6c3b2b2",
+        "name": "Postgres Chat Memory1",
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-API-Key",
+                "value": "e2bb8a4e15e2ce381c4acd6c2bda500e"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -8896,
+          880
+        ],
+        "id": "e90212d6-cc57-4efa-bcaa-c2201354d0dc",
+        "name": "Enviar WhatsApp YCloud"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Preparar el payload para YCloud WhatsApp API\nconst phoneFrom =  $('Webhook').first().json.body.whatsappInboundMessage.to;\nconst phoneTo = $('Webhook').first().json.body.whatsappInboundMessage.from;\nconst messageText = $input.first().json.output;\n\nreturn {\n  from: phoneFrom,\n  to: phoneTo,\n  type: \"text\",\n  text: {\n    body: messageText,\n    preview_url: true\n  }\n};"
+        },
+        "id": "f0956ee6-2edd-4619-99ae-d6db1b65f7ca",
+        "name": "Preparar Payload WhatsApp",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -9168,
+          880
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "4mtNYrLqBUhzwLjA",
+            "mode": "list",
+            "cachedResultUrl": "/workflow/4mtNYrLqBUhzwLjA",
+            "cachedResultName": "notificacion llamada"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "lead_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('lead_name', ``, 'string') }}",
+              "confirmation_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('confirmation_text', ``, 'string') }}",
+              "raw_from_agent": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('raw_from_agent', ``, 'string') }}",
+              "whatsapp_id": "={{ $('Normalice').item.json.body.conversation.contact_inbox.source_id }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "lead_name",
+                "displayName": "lead_name",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "lead_number",
+                "displayName": "lead_number",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": true
+              },
+              {
+                "id": "confirmation_text",
+                "displayName": "confirmation_text",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "raw_from_agent",
+                "displayName": "raw_from_agent",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              },
+              {
+                "id": "whatsapp_id",
+                "displayName": "whatsapp_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string",
+                "removed": false
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          -9440,
+          1088
+        ],
+        "id": "218f9068-51c2-4295-961a-fde5d724a182",
+        "name": "agendo llamada"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "claude-sonnet-4-20250514",
+            "mode": "list",
+            "cachedResultName": "Claude Sonnet 4"
+          },
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+        "typeVersion": 1.3,
+        "position": [
+          -9696,
+          1072
+        ],
+        "id": "8453b52d-7e85-4f08-a656-d09ca68bb240",
+        "name": "Anthropic Chat Model",
+        "credentials": {
+          "anthropicApi": {
+            "id": "x1cMDDSv3RoaFkK5",
+            "name": "Anthropic account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.messageBody }}",
+          "options": {
+            "systemMessage": "=## IDENTIDAD\nSos Tomas, asistente virtual de Opting (Seguridad e Higiene). Atendés consultas sobre seguridad e higiene laboral para comercios y locales gastronómicos.\n\n---\n\nTu objetivo es calificar al prospecto y agendar una llamada para presentarle el servicio de Seguridad e Higiene.\n\n🚨 REGLAS ABSOLUTAS (CRÍTICA – PRIORIDAD MÁXIMA)\n\n❌ NO hagas múltiples preguntas en un solo mensaje\n❌ NO te presentes mas de una vez, solo en el mensaje inicial\n❌ No te salgas de las instrucciones, si el cliente pide algo u ofrece algo fuera de lo mencionado en las instrucciones, decí que lo vas a derivar\n❌ Si no quieren agendar, no insistas\n❌ No menciones el nombre del cliente al formular la respuesta\n\n🚨 REGLA CRÍTICA SOBRE LLAMADAS (PRIORIDAD MÁXIMA)\n\n❌ NUNCA digas que vas a llamar a alguien\n❌ NUNCA uses el recurso llamada para resolver problemas\n❌ NUNCA ofrezcas llamar al cliente\n❌ NUNCA llames por temas técnicos, soporte o atención al cliente\n❌ NUNCA uses llamadas para reclamos, inconvenientes o consultas operativas\n\n✅ SOLO podés agendar llamadas con fines comerciales o de ventas\n✅ La llamada es únicamente para presentar el servicio de Seguridad e Higiene\n✅ Siempre se agenda con link de Calendly o coordinando horario\n✅ Ante cualquier problema técnico, soporte o atención al cliente → DERIVAR\n\n📌 Regla obligatoria:\nLas llamadas SOLO se usan para agendar reuniones comerciales.\nLas llamadas NUNCA se usan para soporte, atención al cliente o resolución de problemas.\n\n📌 Si el cliente tiene un problema, reclamo, inconveniente, duda operativa o técnica:\nResponder que lo vas a derivar a atención al cliente.\n\nEjemplo de derivación:\n\"Perfecto, eso lo ve el equipo de atención al cliente. Te los derivo así pueden ayudarte.\"\n\n---\n\n🚨 REGLA PRINCIPAL:\nTu único objetivo es conseguir los datos del dueño y agendar una llamada. No cotices precios ni des detalles del servicio por chat. Todo se resuelve en la llamada.\n\nSI NO HAY NADA QUE RESPONDER: Devuelve un simple \"👍\"\n\n---\n\n## FLUJO DE CONVERSACIÓN\n\n**1. Saludo inicial**\n\"Hola! Soy Tomas de Opting ¿Cómo estás?\nDecime, ¿con quién tengo el gusto? ¿Sos el dueño o encargado del local?\"\n\n---\n\n**2. Confirmar que es el decisor**\n\nSi confirma que es el dueño/encargado → pasar al paso 3.\n\nSi no es el decisor:\n\"Perfecto, ¿me podés pasar con el dueño o encargado? Necesito hablar con quien toma las decisiones del negocio.\"\n\n---\n\n**3. Averiguar cantidad de sucursales**\n\nPreguntá:\n\"¿Tenés un solo local o más de uno?\"\n\n→ Si tiene un solo local: pasar al paso 4  \n→ Si tiene varios:\n\n\"Genial, ¿cuántos locales en total?\"\n\n---\n\n**4. Averiguar si cuenta con presupuesto**\n\n\"Perfecto, por 650.000ARS anuales por local quedas completamente cubierto, ¿contás con ese presupuesto?\"\n\n---\n\n**5. Agendar la llamada**\n\n\"Perfecto. Lo que hacemos es una llamada rápida de 10 minutos donde te cuento cómo podemos cubrir tu negocio ante inspecciones y multas, sin complicaciones.\nDecime cuándo te queda mejor y te pido si me pasás un mail?\"\n\nHorarios para agendar llamada:\nlunes a viernes de 9 a 18 (días hábiles)\n\n---\n\n**6. Si ya agendó**\n\n\"Buenísimo, quedamos para esa llamada. Cualquier consulta estoy por acá.\nTe hago otra consulta, ¿ya tenés un servicio de Seguridad e Higiene vigente?\"\n\n---\n\n**7. Si pregunta de qué se trata el servicio antes de agendar**\n\n\"En la llamada te explico todo en detalle, pero en resumen: te cubrimos ante inspecciones, multas y clausuras durante todo el año.\n¿Agendamos los 10 minutos?\"\n\n---\n\n**8. Si pregunta precio**\n\n\"El valor depende de la cantidad de locales y el rubro. En la llamada te armo un presupuesto exacto.\n¿Cuándo hablamos?\"\n\n---\n\n**9. Si hace cualquier tipo de consulta relacionada al carnet de manipulacion de alimentos/curso/certificado**\n\nDerivar al número encargado:\n\n+54 9 11 3361-0471\n\n\"Perfecto, eso lo ve el equipo encargado del carnet de manipulación.\nTe paso el número para que puedan ayudarte directamente:\n+54 9 11 3361-0471\"\n\n---\n\n### C) SI menciona inspección, multa, acta o clausura\n\n\"Justamente para eso estamos. Hacemos una llamada y lo resolvemos.\n¿Coordinamos por acá o preferís agendarla?\n\n👉 https://calendly.com/optingsha-info/30min\"\n\n---\n\n### D) SI dice \"lo voy a pensar\"\n\n\"Dale, tomá tu tiempo. Te recuerdo que una inspección no avisa.\n¿Hay algo puntual que te genera duda?\"\n\n→ Si insiste en que necesita tiempo:\n\n\"👍 Quedamos en contacto.\"\n\n---\n\n### E) SI dice \"ya tenemos proveedor\"\n\n\"¿Están 100% cubiertos o hay algo que te preocupa?\nEn 10 min te digo si hay algún hueco.\"\n\n---\n\n### F) SI dice \"no me interesa\"\n\n\"¿Lo decís porque ya lo tienen resuelto o porque no lo gestionan ustedes?\"\n\n---\n\n### G) SI consulta por cualquier otro tema no especificado\n\n\"Eso lo vemos en la llamada.\n¿Agendamos los 10 minutos?\n\n👉 https://calendly.com/optingsha-info/30min\"\n\nSI no quiere agendar la llamada:\n\n\"dejame que lo consulto y te digo\"\n\n---\n\n### H) SI confirma la compra o cierre\n\nAgradecer y confirmar que el equipo se va a contactar.\n\n---\n\n### I) SI hay problemas técnicos, soporte, reclamos, consultas operativas o atención al cliente\n\nResponder:\n\n\"Perfecto, eso lo ve el equipo de atención al cliente.\nTe los derivo así pueden ayudarte.\"\n\nNUNCA ofrecer llamada en estos casos.\n\n---\n\n## REGLAS DE COMPORTAMIENTO\n\n1. Usá siempre el nombre del usuario si lo tenés\n2. Mensajes cortos: 3-4 líneas máximo\n3. Siempre terminá con una pregunta\n4. Preguntas binarias: \"¿Hoy o mañana?\" en lugar de \"¿Querés agendar?\"\n5. No vendas planes por chat → solo agendá reunión\n6. Tono argentino: \"vos\", \"dale\", \"genial\", \"¿cómo andás?\"\n7. Máximo 2 emojis por mensaje\n8. Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n9. Nunca menciones el nombre del cliente al formular la respuesta\n10. Ante cualquier inconveniente derivar a soporte\n11. Las llamadas SOLO se agendan para ventas\n12. NUNCA decir que vas a llamar\n13. NUNCA usar llamadas para soporte o atención al cliente\n\n---\n\n## CHECKLIST ANTES DE CADA RESPUESTA\n\n- Si no corresponde responder, devolver EXACTAMENTE un: \"👍\"\n- ¿Estoy usando el mensaje exacto del paso correspondiente?\n- ¿El mensaje termina con una pregunta?\n- ¿Es corto (3-4 líneas)?\n- ¿Conseguí el nombre del dueño y la cantidad de locales antes de agendar?\n- ¿Estoy intentando agendar solo si es un caso comercial?\n- ¿Evité ofrecer llamadas para soporte?\n- ¿Derivé a atención al cliente si corresponde?\n- NUNCA des precios ni detalles del servicio por chat, todo va a la llamada"
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 2,
+        "position": [
+          -9696,
+          880
+        ],
+        "id": "71916f66-76c7-4a83-b09b-0bf0c5542ec8",
+        "name": "RAG Agent"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "seguimiento_whatsapp",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "phone",
+                "condition": "eq",
+                "keyValue": "={{ $json.from }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "responded",
+                "fieldValue": "true"
+              }
+            ]
+          }
+        },
+        "name": "Marcar Respondido",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -10240,
+          1024
+        ],
+        "id": "704c22fe-df1a-41ea-ab43-df2dd74cc11c",
+        "credentials": {
+          "supabaseApi": {
+            "id": "HzCSuC5VeQmhADg5",
+            "name": "Supabase account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO message_buffer (phone, phone_to, message_body, customer_name, wamid, waba_id, timestamp_msg, dentro_horario, batch_id, created_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())\nON CONFLICT DO NOTHING;",
+          "options": {
+            "queryReplacement": "=={{ $json.from }},={{ $json.to }},={{ $json.messageBody }},={{ $json.customerName }},={{ $json.wamid }},={{ $json.wabaId }},={{ $json.timestamp }},={{ $json.dentroDeHorario }},={{ $json.batchId }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -12048,
+          64
+        ],
+        "id": "6fdfa374-ecea-4796-a334-ad68f1662ca4",
+        "name": "Guardar en Buffer",
+        "alwaysOutputData": false,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const from = $('Parsear Mensaje').item.json.from;\nconst batchId = `${from}_${Date.now()}`;\n\nreturn {\n  ...$('Parsear Mensaje').item.json,\n  batchId\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -12240,
+          64
+        ],
+        "id": "1aa9b249-976f-49d1-a85e-5843ca085c2f",
+        "name": "Generar Batch ID"
+      },
+      {
+        "parameters": {
+          "amount": 20
+        },
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -11856,
+          64
+        ],
+        "id": "6e454244-5178-436c-b771-255ac600604d",
+        "name": "Wait 10s",
+        "webhookId": "efebdd3e-fb62-495f-834b-32ae1e5509d1"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT * FROM message_buffer\nWHERE phone = $1\n  AND processed = false\nORDER BY created_at ASC;",
+          "options": {
+            "queryReplacement": "={{ $('Parsear Mensaje').item.json.from }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -11664,
+          64
+        ],
+        "id": "d6b557f8-f000-4f6a-bead-1af950d8cc40",
+        "name": "Leer Mensajes Buffer",
+        "alwaysOutputData": false,
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const mensajes = $input.all().map(i => i.json);\nconst miBatchId = $('Generar Batch ID').item.json.batchId;\n\nif (mensajes.length === 0) {\n  return { continuar: false, mensajeCombinado: '' };\n}\n\nconst ultimoMensaje = mensajes[mensajes.length - 1];\nconst soyElUltimo = ultimoMensaje.batch_id === miBatchId;\n\nif (!soyElUltimo) {\n  return { continuar: false, mensajeCombinado: '' };\n}\n\nconst mensajeCombinado = mensajes\n  .map(m => m.message_body)\n  .filter(Boolean)\n  .join('\\n');\n\nconst ids = mensajes.map(m => m.id);\n\nreturn {\n  continuar: true,\n  mensajeCombinado,\n  bufferIds: ids,\n  from: mensajes[0].phone,\n  to: mensajes[0].phone_to,\n  customerName: mensajes[0].customer_name,\n  wamid: ultimoMensaje.wamid,\n  wabaId: ultimoMensaje.waba_id,\n  timestamp: ultimoMensaje.timestamp_msg,\n  dentroDeHorario: ultimoMensaje.dentro_horario\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -11472,
+          64
+        ],
+        "id": "06d808a2-267a-4656-86fa-11e216b65b14",
+        "name": "Verificar y Concatenar"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "buf-check-001",
+                "leftValue": "={{ $json.continuar }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "c429126b-a640-4d8c-8668-5d6e22848adb",
+                "leftValue": "={{ $('Parsear Mensaje').item.json.esMensajeReciente }}",
+                "rightValue": "true",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals",
+                  "name": "filter.operator.equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -11280,
+          64
+        ],
+        "id": "bd86229a-8d28-462d-97d2-21879f168eba",
+        "name": "Soy el ultimo?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const data = $('Verificar y Concatenar').item.json;\n\nreturn {\n  from: data.from,\n  to: data.to,\n  customerName: data.customerName,\n  messageBody: data.mensajeCombinado,\n  wamid: data.wamid,\n  wabaId: data.wabaId,\n  timestamp: data.timestamp,\n  dentroDeHorario: data.dentroDeHorario\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -11008,
+          48
+        ],
+        "id": "2ffffaf4-bf48-418c-9408-3e2f0fecd351",
+        "name": "Preparar para Flujo"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE message_buffer\nSET processed = true\nWHERE id = ANY(string_to_array($1, ',')::int[]);",
+          "options": {
+            "queryReplacement": "={{\n  (Array.isArray($('Verificar y Concatenar').first().json.bufferIds)\n    ? $('Verificar y Concatenar').first().json.bufferIds\n    : [ $('Verificar y Concatenar').first().json.bufferIds ]\n  )\n  .map((x) => Number(x))\n  .filter((x) => Number.isFinite(x))\n  .join(',')\n}}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -10784,
+          -192
+        ],
+        "id": "b3072512-1fe5-4125-8792-0341bd48ac41",
+        "name": "Marcar Buffer Procesado1",
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "926068f2-daf4-47ef-8d22-c1bcb1ddc8ac",
+        "name": "Guardar Seguimiento inbound",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -8672,
+          -64
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO seguimiento_whatsapp (phone, phone_from, customer_name, last_bot_message_at, responded)\nVALUES ($1, $2, $3, $4, false)\nON CONFLICT (phone) DO UPDATE SET\n  phone_from = EXCLUDED.phone_from,\n  customer_name = EXCLUDED.customer_name,\n  last_bot_message_at = EXCLUDED.last_bot_message_at,\n  responded = false;",
+          "options": {
+            "queryReplacement": "={{ $('Webhook').item.json.body.whatsappInboundMessage.from }},={{ $('Webhook').first().json.body.whatsappInboundMessage.to }},={{ $('Parsear Mensaje').item.json.customerName }},={{ new Date().toISOString() }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "uGGhyk491RbNedD2",
+            "name": "Postgres account 2"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Parsear Mensaje": {
+        "main": [
+          [
+            {
+              "node": "Generar Batch ID",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If": {
+        "main": [
+          [
+            {
+              "node": "RAG Agent1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "RAG Agent1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RAG Agent1": {
+        "main": [
+          [
+            {
+              "node": "Preparar Payload WhatsApp1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Anthropic Chat Model1": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "RAG Agent1",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "agendo llamada1": {
+        "ai_tool": [
+          [
+            {
+              "node": "RAG Agent1",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar Payload WhatsApp1": {
+        "main": [
+          [
+            {
+              "node": "Enviar WhatsApp YCloud1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enviar WhatsApp YCloud1": {
+        "main": [
+          [
+            {
+              "node": "Guardar Lead inbound",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Guardar Seguimiento inbound",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Postgres Chat Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "RAG Agent1",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If2": {
+        "main": [
+          [
+            {
+              "node": "Marcar Respondido1",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "If",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "If4",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Parsear Mensaje",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "If5",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If4": {
+        "main": [
+          [
+            {
+              "node": "Call '0pting -  Estado seguimiento'1",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Marcar Respondido",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "RAG Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SQL -  Traer estado del chat": {
+        "main": [
+          [
+            {
+              "node": "esta activo?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "esta activo?": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Stop and Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guardar Lead inbound": {
+        "main": [
+          [
+            {
+              "node": "SQL - Cancelar Seguimiento",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "SQL - Cancelar Seguimiento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SQL -  Traer estado del chat1": {
+        "main": [
+          [
+            {
+              "node": "esta activo?1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "esta activo?1": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Stop and Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If5": {
+        "main": [
+          [
+            {
+              "node": "SQL -  Traer estado del chat",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "SQL -  Traer estado del chat1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guardar Lead inbound1": {
+        "main": [
+          [
+            {
+              "node": "SQL - Cancelar Seguimiento2",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "SQL - Cancelar Seguimiento2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Postgres Chat Memory1": {
+        "ai_memory": [
+          [
+            {
+              "node": "RAG Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar Payload WhatsApp": {
+        "main": [
+          [
+            {
+              "node": "Enviar WhatsApp YCloud",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "agendo llamada": {
+        "ai_tool": [
+          [
+            {
+              "node": "RAG Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Anthropic Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "RAG Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RAG Agent": {
+        "main": [
+          [
+            {
+              "node": "Preparar Payload WhatsApp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guardar en Buffer": {
+        "main": [
+          [
+            {
+              "node": "Wait 10s",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generar Batch ID": {
+        "main": [
+          [
+            {
+              "node": "Guardar en Buffer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 10s": {
+        "main": [
+          [
+            {
+              "node": "Leer Mensajes Buffer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer Mensajes Buffer": {
+        "main": [
+          [
+            {
+              "node": "Verificar y Concatenar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verificar y Concatenar": {
+        "main": [
+          [
+            {
+              "node": "Soy el ultimo?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Soy el ultimo?": {
+        "main": [
+          [
+            {
+              "node": "Preparar para Flujo",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Preparar para Flujo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar para Flujo": {
+        "main": [
+          [
+            {
+              "node": "If2",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Marcar Buffer Procesado1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "federico suarez",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-25T05:36:54.761Z",
+        "id": 516,
+        "workflowId": "PxrfRFfaX-QGTqBlh2992",
+        "versionId": "5ea4b062-8847-4ad9-9957-265ee777bcd9",
+        "event": "activated",
+        "userId": "1a055ca0-60d6-4e74-813b-dd571d1e3a32"
+      },
+      {
+        "createdAt": "2026-04-25T05:36:54.737Z",
+        "id": 515,
+        "workflowId": "PxrfRFfaX-QGTqBlh2992",
+        "versionId": "5ea4b062-8847-4ad9-9957-265ee777bcd9",
+        "event": "deactivated",
+        "userId": "1a055ca0-60d6-4e74-813b-dd571d1e3a32"
+      }
+    ]
+  }
+}

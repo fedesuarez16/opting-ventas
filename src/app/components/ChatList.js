@@ -4,6 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { useChats } from '../../hooks/useChats';
 import { getAllLeads, updateLead, searchLeads } from '../services/leadService';
 
+// Línea de origen "Carnet" (mismo valor que /leads/tabla). Cualquier otro phone_from
+// (incluyendo null) cae en "S&H".
+const LINEA_CARNET_PHONE = '+5491141872290';
+
 const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   // Obtener chats sin filtrar por agente (mostrar todas las conversaciones)
   const { chats, loading, loadingMore, error, refreshChats, loadMoreChats, pagination } = useChats(null);
@@ -16,6 +20,10 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchedLeads, setSearchedLeads] = useState([]);
   const [isSearchingLeads, setIsSearchingLeads] = useState(false);
+
+  // Filtro por línea (phone_from del lead asociado).
+  // '' = todas, 'carnet' = phone_from === LINEA_CARNET_PHONE, 'sh' = el resto (incluye null/sin lead).
+  const [lineFilter, setLineFilter] = useState('');
   
   // Estado para rastrear qué chats han sido leídos (usando localStorage para persistencia)
   // Guardamos el timestamp del último mensaje visto para detectar nuevos mensajes
@@ -1299,11 +1307,23 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
     : chats;
   const localFilteredChats = filterChats(chatsWithServerFound);
   const allFilteredChats = searchQuery.trim()
-    ? (searchedChats.length > 0 
+    ? (searchedChats.length > 0
         ? searchedChats // Usar resultados de búsqueda exhaustiva
         : [...new Map([...localFilteredChats, ...matchingChatsFromSearch].map(chat => [chat.id, chat])).values()] // Fallback a búsqueda local + leads
       )
     : localFilteredChats; // Sin búsqueda, mostrar todos los chats locales
+
+  // Aplicar filtro por línea (phone_from del lead). 'sh' incluye chats sin lead asociado.
+  const lineaCarnetNormalized = normalizePhoneNumber(LINEA_CARNET_PHONE);
+  const displayedChats = !lineFilter
+    ? allFilteredChats
+    : allFilteredChats.filter((chat) => {
+        const lead = getLeadForChat(chat);
+        const leadPhoneFromNorm = normalizePhoneNumber(lead?.phone_from || '');
+        return lineFilter === 'carnet'
+          ? leadPhoneFromNorm === lineaCarnetNormalized
+          : leadPhoneFromNorm !== lineaCarnetNormalized;
+      });
 
   if (loading) {
     return (
@@ -1363,7 +1383,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h2 className="text-sm font-semibold text-gray-800">
-              Chats de WhatsApp ({searchQuery ? allFilteredChats.length : chats.length})
+              Chats de WhatsApp ({searchQuery || lineFilter ? displayedChats.length : chats.length})
               {(isSearchingLeads || isSearchingChats) && searchQuery.trim() && (
                 <span className="text-xs text-gray-500 ml-2">Buscando...</span>
               )}
@@ -1409,6 +1429,30 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
             </button>
           )}
         </div>
+
+        {/* Filtro por línea (phone_from) */}
+        <div className="mt-2 flex items-center gap-1 text-xs">
+          <span className="text-gray-500 mr-1">Línea:</span>
+          {[
+            { value: '', label: 'Todas' },
+            { value: 'carnet', label: 'Carnet' },
+            { value: 'sh', label: 'S&H' },
+          ].map((opt) => (
+            <button
+              key={opt.value || 'all'}
+              type="button"
+              onClick={() => setLineFilter(opt.value)}
+              className={`px-2 py-1 rounded-md border transition-colors ${
+                lineFilter === opt.value
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+              aria-pressed={lineFilter === opt.value}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Indicador de búsqueda de chat por targetPhoneNumber */}
@@ -1423,7 +1467,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
 
       {/* Lista de chats - scrolleable */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {allFilteredChats.length === 0 && searchQuery ? (
+        {displayedChats.length === 0 && (searchQuery || lineFilter) ? (
           <div className="text-center py-8">
             {(isSearchingLeads || isSearchingChats) ? (
               <>
@@ -1449,7 +1493,7 @@ const ChatList = ({ onSelectChat, selectedChat, targetPhoneNumber }) => {
             )}
           </div>
         ) : (
-          allFilteredChats.map((chat) => {
+          displayedChats.map((chat) => {
           const isRead = isChatRead(chat);
           const isSelected = selectedChat?.id === chat.id;
           

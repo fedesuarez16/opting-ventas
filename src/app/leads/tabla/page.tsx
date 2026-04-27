@@ -194,7 +194,7 @@ export default function LeadsTablePage() {
 
   return (
     <AppLayout>
-      <div className="mb-8  sm:mx-1">
+      <div className="mb-8   sm:mx-1">
         <div className="bg-white shadow-sm border-t  border-gray-200  mb-4 px-4 sm:px-2">
           <div className="px-4 py-3">
             <nav className="flex" aria-label="Breadcrumb">
