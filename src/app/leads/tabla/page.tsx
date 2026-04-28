@@ -37,6 +37,30 @@ function formatDateTime(value: string | undefined): string {
   }
 }
 
+const ETIQUETA_COLOR_CLASSES: Record<string, string> = {
+  'Llamada agendada': 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20',
+  'Llamar': 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/25',
+  'Deriva humano': 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/20',
+  'Presupuesto': 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-600/20',
+  'Inspección': 'bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-600/20',
+  'Empleado': 'bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-600/20',
+  'Dueño': 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-inset ring-fuchsia-600/20',
+};
+
+function getEtiquetaColorClass(label: string): string {
+  return (
+    ETIQUETA_COLOR_CLASSES[label] ||
+    'bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-600/15'
+  );
+}
+
+function getServicioPillClass(servicio: string): string {
+  if (servicio === 'Carnet') {
+    return 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20';
+  }
+  return 'bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-600/20';
+}
+
 export default function LeadsTablePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
@@ -65,10 +89,16 @@ export default function LeadsTablePage() {
   const [isEditSidebarOpen, setIsEditSidebarOpen] = useState(false);
   const [leadForDetail, setLeadForDetail] = useState<Lead | null>(null);
   const [isDetailSidebarOpen, setIsDetailSidebarOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
+      try {
+        await fetch('/api/leads/recalificar-estados', { method: 'POST' });
+      } catch (e) {
+        console.warn('No se pudo recalificar estados antes de cargar la tabla:', e);
+      }
       const data = await getAllLeads();
       setLeads(data);
       setFilteredLeads(data);
@@ -171,6 +201,34 @@ export default function LeadsTablePage() {
   const getServicioLabel = (l: Lead) =>
     (l.phone_from ?? '') === PHONE_FROM_FILTER_TARGET ? 'Carnet' : 'S&H';
 
+  const toggleRowSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected =
+    filteredLeads.length > 0 && filteredLeads.every((l) => selectedIds.has(l.id));
+  const someVisibleSelected =
+    !allVisibleSelected && filteredLeads.some((l) => selectedIds.has(l.id));
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const l of filteredLeads) next.delete(l.id);
+      } else {
+        for (const l of filteredLeads) next.add(l.id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -194,143 +252,262 @@ export default function LeadsTablePage() {
 
   return (
     <AppLayout>
-      <div className="mb-8   sm:mx-1">
-        <div className="bg-white shadow-sm border-t  border-gray-200  mb-4 px-4 sm:px-2">
-          <div className="px-4 py-3">
-            <nav className="flex" aria-label="Breadcrumb">
-              <ol className="inline-flex items-center space-x-1 md:space-x-3">
+      <div className="mb-8 sm:mx-1">
+        <div className="bg-white border mt-2 border-gray-200/80 rounded-2xl shadow-sm ring-1 ring-black/[0.02] mb-4 mx-2 overflow-hidden">
+          {/* Hero header */}
+          <div className="px-6 pt-4  pb- bg-gradient-to-br from-white via-slate-50/50 to-indigo-50/30 border-b border-gray-100">
+            <nav className="flex mb-3" aria-label="Breadcrumb">
+              <ol className="inline-flex items-center space-x-1.5 text-xs">
                 <li>
-                  <Link href="/" className="inline-flex items-center text-sm font-medium text-gray-700 hover:text-indigo-600">
+                  <Link href="/" className="inline-flex items-center font-medium text-slate-500 hover:text-indigo-600 transition-colors">
                     Inicio
                   </Link>
                 </li>
-                <li>
-                  <span className="mx-1 text-gray-400">/</span>
-                  <span className="text-sm font-medium text-gray-600" aria-current="page">Leads</span>
+                <li className="flex items-center">
+                  <svg className="h-3 w-3 mx-1 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="font-medium text-slate-700" aria-current="page">Leads</span>
                 </li>
               </ol>
             </nav>
+
+            <div className="flex items-center  justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                
+                <div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {(searchTerm || filterEstado || attentionEtiquetasFilter || filterPhoneFrom) && (
+                      <>
+                        {' · '}
+                        <span className="text-indigo-600 font-medium">
+                          {filteredLeads.length.toLocaleString('es-AR')} {filteredLeads.length === 1 ? 'resultado' : 'resultados'}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {(searchTerm || filterEstado || attentionEtiquetasFilter || filterPhoneFrom) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterEstado('');
+                    setFilterPhoneFrom('');
+                    setAttentionEtiquetasFilter(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-gray-200 hover:border-gray-300 rounded-lg shadow-sm transition-colors"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="px-6 py-3 flex justify-between items-center border-t border-gray-100 flex-wrap gap-3">
-            <div className="flex items-center gap-4 flex-wrap">
-              <h1 className="text-xl font-regular text-slate-800">Tabla de Leads</h1>
-              {(searchTerm || filterEstado || attentionEtiquetasFilter || filterPhoneFrom) && (
-                <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
-                  {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
+          {/* Toolbar */}
+          <div className="px-6 py-3 flex items-center flex-wrap gap-2.5 bg-white">
+            <div className="relative flex-1 min-w-[220px] max-w-md">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Buscar por nombre, teléfono o email…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full pl-9 pr-9 py-2 bg-slate-50 border border-transparent rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <div className="hidden md:block h-6 w-px bg-gray-200" aria-hidden />
+
+            <div className="relative">
+              <select
+                value={filterEstado}
+                onChange={(e) => setFilterEstado(e.target.value)}
+                className={`appearance-none cursor-pointer pl-8 pr-8 py-2 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${
+                  filterEstado
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
+                    : 'border-gray-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+                aria-label="Filtrar por estado"
+              >
+                {estadoFilterOptions.map((opt) => (
+                  <option key={opt.value || 'all'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <svg className={`absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none ${filterEstado ? 'text-indigo-500' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            <div className="relative">
+              <select
+                value={filterPhoneFrom}
+                onChange={(e) => setFilterPhoneFrom((e.target.value || '') as PhoneFromTableFilter)}
+                className={`appearance-none cursor-pointer pl-8 pr-8 py-2 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${
+                  filterPhoneFrom
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
+                    : 'border-gray-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+                aria-label="Filtrar por origen"
+              >
+                <option value="">Todos los orígenes</option>
+                <option value="only_target">Carnet</option>
+                <option value="exclude_target">S&H</option>
+              </select>
+              <svg className={`absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none ${filterPhoneFrom ? 'text-indigo-500' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M3 12h18M3 17h18" />
+              </svg>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAttentionEtiquetasFilter((v) => !v)}
+              className={[
+                'relative inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-all',
+                attentionEtiquetasFilter
+                  ? 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm ring-2 ring-amber-500/20'
+                  : 'border-gray-200 bg-white text-slate-700 hover:bg-slate-50',
+              ].join(' ')}
+              title={
+                attentionEtiquetasFilter
+                  ? 'Quitar filtro de etiquetas (inspección, presupuesto, deriva humano)'
+                  : 'Ver solo leads con inspección, presupuesto o deriva humano'
+              }
+              aria-pressed={attentionEtiquetasFilter}
+              aria-label={`Alertas de etiquetas: ${attentionEtiquetasCount} leads`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+              <span className="hidden sm:inline">Atención</span>
+              {attentionEtiquetasCount > 0 && (
+                <span
+                  className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold tabular-nums ${
+                    attentionEtiquetasFilter
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-red-500 text-white'
+                  }`}
+                >
+                  {attentionEtiquetasCount > 99 ? '99+' : attentionEtiquetasCount}
                 </span>
               )}
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Buscar por nombre o teléfono..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="block w-64 pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Estado</span>
-                <select
-                  value={filterEstado}
-                  onChange={(e) => setFilterEstado(e.target.value)}
-                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[140px]"
-                  aria-label="Filtrar por estado"
-                >
-                  {estadoFilterOptions.map((opt) => (
-                    <option key={opt.value || 'all'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="sr-only md:not-sr-only md:inline whitespace-nowrap">Origen</span>
-                <select
-                  value={filterPhoneFrom}
-                  onChange={(e) => setFilterPhoneFrom((e.target.value || '') as PhoneFromTableFilter)}
-                  className="border border-gray-300 rounded-lg text-sm py-2 pl-2 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 max-w-[min(100vw-2rem,18rem)]"
-                  aria-label="Filtrar por número de origen phone_from"
-                >
-                  <option value="">Todos los orígenes</option>
-                  <option value="only_target">Carnet</option>
-                  <option value="exclude_target">S&H</option>
-                </select>
-              </label>
+            </button>
+
+            <div className="ml-auto">
               <button
                 type="button"
-                onClick={() => setAttentionEtiquetasFilter((v) => !v)}
-                className={[
-                  'relative inline-flex items-center justify-center rounded-lg border p-2 transition-colors',
-                  attentionEtiquetasFilter
-                    ? 'border-amber-400 bg-amber-50 text-amber-900 ring-2 ring-amber-200'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
-                ].join(' ')}
-                title={
-                  attentionEtiquetasFilter
-                    ? 'Quitar filtro de etiquetas (inspección, presupuesto, deriva humano)'
-                    : 'Ver solo leads con inspección, presupuesto o deriva humano'
-                }
-                aria-pressed={attentionEtiquetasFilter}
-                aria-label={`Alertas de etiquetas: ${attentionEtiquetasCount} leads`}
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-slate-50 transition-colors"
+                title="Exportar resultados a CSV"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  />
+                <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
                 </svg>
-                {attentionEtiquetasCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white tabular-nums">
-                    {attentionEtiquetasCount > 99 ? '99+' : attentionEtiquetasCount}
-                  </span>
-                )}
+                <span className="hidden sm:inline">Exportar</span>
               </button>
             </div>
-            
           </div>
         </div>
 
-        <div className="bg-white border m-2 border-gray-200 rounded-lg overflow-visible shadow-sm">
+        {selectedIds.size > 0 && (
+          <div className="mx-2 mb-2 flex items-center justify-between rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-2.5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-indigo-600 text-white text-xs font-semibold tabular-nums">
+                {selectedIds.size}
+              </span>
+              <span className="text-sm text-indigo-900">
+                {selectedIds.size === 1 ? 'lead seleccionado' : 'leads seleccionados'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+            >
+              Limpiar selección
+            </button>
+          </div>
+        )}
+
+        <div className="bg-white border m-2 border-gray-200/80 rounded-xl overflow-visible shadow-sm ring-1 ring-black/[0.02]">
           <div className="overflow-x-auto overflow-y-visible">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
+            <table className="min-w-full">
+              <thead className="bg-slate-50/80 backdrop-blur sticky top-0 z-10">
+                <tr className="border-b border-gray-200">
+                  <th scope="col" className="px-4 py-3.5 w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected;
+                      }}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Seleccionar todos los leads visibles"
+                    />
+                  </th>
                   <th
                     scope="col"
-                    className="px-3 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[1%] max-w-[9rem] sm:max-w-[11rem]"
+                    className="px-3 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-[1%] max-w-[9rem] sm:max-w-[11rem]"
                   >
                     Nombre
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     Teléfono
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                  <th scope="col" className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                     Servicio
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     Fecha/Hora Contacto
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     Estado
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     Etiquetas
                   </th>
-                  <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-3.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                     Acción
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-100">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500 text-sm">
+                    <td colSpan={8} className="px-5 py-12 text-center text-gray-500 text-sm">
                       No hay leads para mostrar. Ajustá los filtros o la búsqueda.
                     </td>
                   </tr>
@@ -339,20 +516,40 @@ export default function LeadsTablePage() {
                     const booleanTags = getLeadBooleanEtiquetaLabels(lead);
                     const legacyEtiqueta = getEtiqueta(lead);
                     const legacyOk = legacyEtiqueta && legacyEtiqueta !== '—';
+                    const isSelected = selectedIds.has(lead.id);
+                    const servicio = getServicioLabel(lead);
                     return (
-                    <tr key={lead.id} className="hover:bg-gray-50/80">
-                      <td className="px-3 py-3.5 text-sm font-medium text-gray-900 max-w-[9rem] sm:max-w-[11rem]">
+                    <tr
+                      key={lead.id}
+                      className={`group transition-colors ${
+                        isSelected ? 'bg-indigo-50/50 hover:bg-indigo-50/70' : 'hover:bg-slate-50/70'
+                      }`}
+                    >
+                      <td className="px-4 py-3.5 w-10">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          checked={isSelected}
+                          onChange={() => toggleRowSelected(lead.id)}
+                          aria-label={`Seleccionar lead ${getNombre(lead)}`}
+                        />
+                      </td>
+                      <td className="px-3 py-3.5 text-sm font-medium text-slate-900 max-w-[9rem] sm:max-w-[11rem]">
                         <span className="block truncate" title={getNombre(lead)}>
                           {getNombre(lead)}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-slate-600 tabular-nums">
                         {getPhone(lead) || '—'}
                       </td>
-                      <td className="px-5 py-3.5   whitespace-nowrap text-sm text-gray-700">
-                        <span className="text-sm bg-gray-100 border border-gray-200  px-2 py-1 rounded-full">{getServicioLabel(lead)}</span>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${getServicioPillClass(servicio)}`}
+                        >
+                          {servicio}
+                        </span>
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap  text-sm text-gray-600">
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-slate-600">
                         {formatDateTime(lead.fechaContacto || lead.created_at)}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
@@ -363,7 +560,7 @@ export default function LeadsTablePage() {
                               setStatusDropdownOpenFor((cur) => (cur === lead.id ? null : lead.id))
                             }
                             disabled={!!statusUpdatingId && statusUpdatingId !== lead.id}
-                            className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)} cursor-pointer select-none`}
+                            className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getLeadEstadoPillClass(lead.estado)} cursor-pointer select-none transition-shadow hover:shadow-sm`}
                             aria-haspopup="listbox"
                             aria-expanded={statusDropdownOpenFor === lead.id}
                             title="Cambiar estado"
@@ -395,35 +592,35 @@ export default function LeadsTablePage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[280px]">
+                      <td className="px-5 py-3.5 text-sm text-slate-600 max-w-[280px]">
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {booleanTags.map((label) => (
                             <span
                               key={label}
-                              className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-indigo-600/15 whitespace-nowrap"
+                              className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${getEtiquetaColorClass(label)}`}
                             >
                               {label}
                             </span>
                           ))}
                           {legacyOk && (
-                            <span className="text-xs text-gray-500 truncate max-w-[160px]" title={legacyEtiqueta}>
+                            <span className="text-xs text-slate-500 truncate max-w-[160px]" title={legacyEtiqueta}>
                               {legacyEtiqueta}
                             </span>
                           )}
                           {booleanTags.length === 0 && !legacyOk && (
-                            <span className="text-gray-400">—</span>
+                            <span className="text-gray-300">—</span>
                           )}
                         </div>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-right text-sm">
-                        <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
                           <button
                             type="button"
                             onClick={() => {
                               setLeadForDetail(lead);
                               setIsDetailSidebarOpen(true);
                             }}
-                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors"
                             title="Ver perfil"
                             aria-label="Ver perfil"
                           >
@@ -433,7 +630,7 @@ export default function LeadsTablePage() {
                           </button>
                           <Link
                             href={`/chat?phoneNumber=${encodeURIComponent(getPhone(lead).replace(/^\++/, ''))}`}
-                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 inline-flex"
+                            className="p-1.5 rounded-md text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 inline-flex transition-colors"
                             title="Ver chat"
                             aria-label="Ver chat"
                           >
@@ -447,7 +644,7 @@ export default function LeadsTablePage() {
                               setLeadToEdit(lead);
                               setIsEditSidebarOpen(true);
                             }}
-                            className="p-1.5 rounded-md text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                            className="p-1.5 rounded-md text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-colors"
                             title="Editar"
                             aria-label="Editar"
                           >
