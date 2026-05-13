@@ -1,0 +1,189 @@
+{
+  "id": "p4iPX5iKxOnQGQg2",
+  "name": "Opting - Envio Masivo",
+  "active": true,
+  "versionId": "77b6e633-1c13-481b-9916-bc14661ecb6f",
+  "createdAt": "2026-05-06T07:32:59.641Z",
+  "updatedAt": "2026-05-11T06:29:50.514Z",
+  "nodes": [
+    {
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "bulk-send-trigger-001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bulk-send",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-pg-select",
+      "name": "Postgres - Leer cola pendiente",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [224, 0],
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, lead_id, phone, phone_from, template_key, template_hsm_name, template_language FROM cola_envio_masivo WHERE batch_id = '{{ $json.body.batch_id }}' AND status = 'pendiente' ORDER BY id ASC;",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-split",
+      "name": "SplitInBatches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [448, 0],
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      }
+    },
+    {
+      "id": "node-pg-enviando",
+      "name": "Postgres - Marcar enviando",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [672, 0],
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE cola_envio_masivo SET status='enviando' WHERE id = {{ $json.id }} RETURNING *;",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-http-ycloud",
+      "name": "HTTP - YCloud",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0],
+      "credentials": {
+        "httpHeaderAuth": { "id": "yJsNAHdst87oU8pt", "name": "YCloud API Key (Bulk Send)" }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ycloud.com/v2/whatsapp/messages/sendDirectly",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $json.phone_from }}\",\n  \"to\": \"{{ $json.phone }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{ $json.template_hsm_name }}\",\n    \"language\": {\n      \"code\": \"{{ $json.template_language }}\",\n      \"policy\": \"deterministic\"\n    }\n  }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-if",
+      "name": "IF - Exito",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1104, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [
+            {
+              "id": "cond-success",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "accepted",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-pg-enviado",
+      "name": "Postgres - Marcar enviado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1328, -96],
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE cola_envio_masivo SET status='enviado', sent_at=now(), ycloud_message_id='{{ $json.id }}' WHERE id={{ $('Postgres - Marcar enviando').item.json.id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-pg-fallado",
+      "name": "Postgres - Marcar fallado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1328, 112],
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE cola_envio_masivo SET status='fallado', error_message=LEFT('{{ ($json.error && $json.error.message ? $json.error.message : JSON.stringify($json)).replace(/'/g, \"\") }}', 500) WHERE id={{ $('Postgres - Marcar enviando').item.json.id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-wait",
+      "name": "Wait 750ms",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1552, 0],
+      "webhookId": "de074faf-f3ee-4994-863d-e70357777b6f",
+      "parameters": {
+        "amount": 0.75
+      }
+    },
+    {
+      "id": "node-pg-cierre",
+      "name": "Postgres - Cerrar batch",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [672, -208],
+      "credentials": {
+        "postgres": { "id": "uGGhyk491RbNedD2", "name": "Postgres account 2" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE envios_masivos_batch SET total_enviado = (SELECT COUNT(*) FROM cola_envio_masivo WHERE batch_id='{{ $('Webhook').item.json.body.batch_id }}' AND status='enviado'), total_fallado = (SELECT COUNT(*) FROM cola_envio_masivo WHERE batch_id='{{ $('Webhook').item.json.body.batch_id }}' AND status='fallado'), status = CASE WHEN (SELECT COUNT(*) FROM cola_envio_masivo WHERE batch_id='{{ $('Webhook').item.json.body.batch_id }}' AND status='fallado') > 0 THEN 'completado_con_errores' ELSE 'completado' END, completed_at = now() WHERE id = '{{ $('Webhook').item.json.body.batch_id }}';",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Postgres - Leer cola pendiente", "type": "main", "index": 0 }]] },
+    "Postgres - Leer cola pendiente": { "main": [[{ "node": "SplitInBatches", "type": "main", "index": 0 }]] },
+    "SplitInBatches": {
+      "main": [
+        [{ "node": "Postgres - Cerrar batch", "type": "main", "index": 0 }],
+        [{ "node": "Postgres - Marcar enviando", "type": "main", "index": 0 }]
+      ]
+    },
+    "Postgres - Marcar enviando": { "main": [[{ "node": "HTTP - YCloud", "type": "main", "index": 0 }]] },
+    "HTTP - YCloud": { "main": [[{ "node": "IF - Exito", "type": "main", "index": 0 }]] },
+    "IF - Exito": {
+      "main": [
+        [{ "node": "Postgres - Marcar enviado", "type": "main", "index": 0 }],
+        [{ "node": "Postgres - Marcar fallado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Postgres - Marcar enviado": { "main": [[{ "node": "Wait 750ms", "type": "main", "index": 0 }]] },
+    "Postgres - Marcar fallado": { "main": [[{ "node": "Wait 750ms", "type": "main", "index": 0 }]] },
+    "Wait 750ms": { "main": [[{ "node": "SplitInBatches", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate"
+  }
+}

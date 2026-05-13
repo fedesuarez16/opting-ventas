@@ -287,6 +287,7 @@ const mapLeadRow = (row: any): Lead => {
     inspeccion: row.inspeccion === true || row.inspeccion === 'true',
     empleado: row.empleado === true || row.empleado === 'true',
     dueno: row.dueno === true || row.dueno === 'true',
+    lista_difusion: row.lista_difusion === true || row.lista_difusion === 'true',
   };
 };
 
@@ -1127,6 +1128,9 @@ export const updateLead = async (leadId: string, leadData: Partial<Lead>): Promi
     }
     if (leadData.dueno !== undefined) {
       dataToUpdate.dueno = boolEtiqueta(leadData.dueno);
+    }
+    if (leadData.lista_difusion !== undefined) {
+      dataToUpdate.lista_difusion = boolEtiqueta(leadData.lista_difusion);
     }
 
     if ((leadData as any).chat_activo !== undefined) {

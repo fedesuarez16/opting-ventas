@@ -14,6 +14,8 @@ import { getLeadEstadoPillClass, normalizeLeadEstadoKey } from '../../utils/lead
 import { getLeadBooleanEtiquetaLabels, leadHasAttentionEtiquetas } from '../../utils/leadEtiquetaTags';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import BulkSendModal, { BulkSendResult } from '../../components/BulkSendModal';
 
 /** Número de origen (`phone_from`) usado en filtros de la tabla. */
 const PHONE_FROM_FILTER_TARGET = '+5491141872290';
@@ -90,6 +92,9 @@ export default function LeadsTablePage() {
   const [leadForDetail, setLeadForDetail] = useState<Lead | null>(null);
   const [isDetailSidebarOpen, setIsDetailSidebarOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSendOpen, setBulkSendOpen] = useState(false);
+  const [bulkSendToast, setBulkSendToast] = useState<{ batchId: string; total: number; efectivo: number } | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const load = async () => {
@@ -228,6 +233,13 @@ export default function LeadsTablePage() {
   };
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkSendSuccess = (result: BulkSendResult) => {
+    setBulkSendOpen(false);
+    setSelectedIds(new Set());
+    setBulkSendToast({ batchId: result.batch_id, total: result.total_seleccionado, efectivo: result.total_efectivo });
+    setTimeout(() => setBulkSendToast(null), 8000);
+  };
 
   if (isLoading) {
     return (
@@ -441,6 +453,24 @@ export default function LeadsTablePage() {
           </div>
         </div>
 
+        {bulkSendToast && (
+          <div className="mx-2 mb-2 flex items-center justify-between rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 shadow-sm">
+            <span className="text-sm text-green-800">
+              Envío iniciado: {bulkSendToast.efectivo} mensajes en cola.{' '}
+              <a
+                href={`/envios-masivos/${bulkSendToast.batchId}`}
+                className="font-medium underline hover:text-green-900"
+                onClick={() => router.push(`/envios-masivos/${bulkSendToast.batchId}`)}
+              >
+                Ver seguimiento
+              </a>
+            </span>
+            <button type="button" onClick={() => setBulkSendToast(null)} className="text-xs text-green-700 hover:text-green-900">
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {selectedIds.size > 0 && (
           <div className="mx-2 mb-2 flex items-center justify-between rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-2.5 shadow-sm">
             <div className="flex items-center gap-3">
@@ -451,15 +481,31 @@ export default function LeadsTablePage() {
                 {selectedIds.size === 1 ? 'lead seleccionado' : 'leads seleccionados'}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
-            >
-              Limpiar selección
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setBulkSendOpen(true)}
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Envío masivo ({selectedIds.size})
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+              >
+                Limpiar selección
+              </button>
+            </div>
           </div>
         )}
+
+        <BulkSendModal
+          open={bulkSendOpen}
+          onOpenChange={setBulkSendOpen}
+          selectedLeads={leads.filter((l) => selectedIds.has(l.id))}
+          onSuccess={handleBulkSendSuccess}
+        />
 
         <div className="bg-white border m-2 border-gray-200/80 rounded-xl overflow-visible shadow-sm ring-1 ring-black/[0.02]">
           <div className="overflow-x-auto overflow-y-visible">

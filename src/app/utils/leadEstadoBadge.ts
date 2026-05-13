@@ -22,5 +22,11 @@ export function getLeadEstadoPillClass(estado: string | null | undefined): strin
   if (key === 'tibio' || key === 'tibios') {
     return 'bg-yellow-100 text-yellow-900 ring-1 ring-inset ring-yellow-600/25';
   }
+  if (key === 'llamada') {
+    return 'bg-purple-100 text-purple-800 ring-1 ring-inset ring-purple-600/20';
+  }
+  if (key === 'visita') {
+    return 'bg-green-100 text-green-800 ring-1 ring-inset ring-green-600/20';
+  }
   return 'bg-gray-100 text-gray-800';
 }

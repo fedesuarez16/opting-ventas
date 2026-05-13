@@ -54,6 +54,8 @@ export interface Lead {
   empleado?: boolean;
   /** Dueño (columna BD `dueno`) */
   dueno?: boolean;
+  /** Lead marcado para envíos masivos / lista de difusión (columna BD `lista_difusion`) */
+  lista_difusion?: boolean;
 }
 
 export interface FilterOptions {

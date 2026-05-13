@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Save, User, Mail, Phone, DollarSign, MapPin, Home, FileText } from 'lucide-react';
+import { X, Save, User, Mail, Phone, DollarSign, MapPin, Home, FileText, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function toDatetimeLocalValue(iso: string | undefined): string {
@@ -57,6 +57,7 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
     inspeccion: false,
     empleado: false,
     dueno: false,
+    lista_difusion: false,
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -92,6 +93,7 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
         inspeccion: lead.inspeccion === true,
         empleado: lead.empleado === true,
         dueno: lead.dueno === true,
+        lista_difusion: lead.lista_difusion === true,
       });
       setContactAtLocal(toDatetimeLocalValue(lead.created_at || lead.fechaContacto));
     } else {
@@ -117,6 +119,7 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
         inspeccion: false,
         empleado: false,
         dueno: false,
+        lista_difusion: false,
       });
       setContactAtLocal(variant === 'leads-table' ? toDatetimeLocalValue(new Date().toISOString()) : '');
     }
@@ -175,6 +178,7 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
           inspeccion: !!formData.inspeccion,
           empleado: !!formData.empleado,
           dueno: !!formData.dueno,
+          lista_difusion: !!formData.lista_difusion,
         };
         if (contactAtLocal) {
           const t = new Date(contactAtLocal);
@@ -220,7 +224,8 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
           !!formData.presupuesto_etiqueta !== (lead.presupuesto_etiqueta === true) ||
           !!formData.inspeccion !== (lead.inspeccion === true) ||
           !!formData.empleado !== (lead.empleado === true) ||
-          !!formData.dueno !== (lead.dueno === true)
+          !!formData.dueno !== (lead.dueno === true) ||
+          !!formData.lista_difusion !== (lead.lista_difusion === true)
         : JSON.stringify(formData) !== JSON.stringify({
             nombreCompleto: lead.nombreCompleto,
             email: lead.email,
@@ -306,6 +311,46 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
         <ScrollArea className="flex-1 h-[calc(100vh-200px)]">
           <div className="p-6 space-y-6">
             {variant === 'leads-table' ? (
+              <>
+              <Card className={cn(
+                "border-2 transition-colors",
+                formData.lista_difusion
+                  ? "border-orange-500 bg-orange-50/50"
+                  : "border-dashed border-muted-foreground/30"
+              )}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={cn(
+                        "flex h-9 w-9 items-center justify-center rounded-full shrink-0",
+                        formData.lista_difusion ? "bg-orange-500 text-white" : "bg-muted text-muted-foreground"
+                      )}>
+                        <Megaphone className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium leading-tight">Lista de difusión</p>
+                        <p className="text-xs text-muted-foreground leading-tight mt-0.5">
+                          {formData.lista_difusion
+                            ? 'Este lead aparece en /leads/lista-difusion'
+                            : 'Marcar para incluirlo en la lista de difusión'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={formData.lista_difusion ? 'default' : 'outline'}
+                      onClick={() => handleChange('lista_difusion', !formData.lista_difusion)}
+                      className={cn(
+                        "shrink-0",
+                        formData.lista_difusion && "bg-orange-500 hover:bg-orange-600"
+                      )}
+                    >
+                      {formData.lista_difusion ? 'Quitar' : 'Marcar'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -419,6 +464,7 @@ const LeadEditSidebar: React.FC<LeadEditSidebarProps> = ({
                   </div>
                 </CardContent>
               </Card>
+              </>
             ) : (
             <>
             {/* Información básica */}
