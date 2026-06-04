@@ -10,6 +10,7 @@ import { ChartPie } from "@/components/ui/chart-pie";
 import { ChartBar } from "@/components/ui/chart-bar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartConfig } from "@/components/ui/chart";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from 'next/link';
 
@@ -40,6 +41,77 @@ const normalizeZona = (zona: string): string => {
     .replace(/\s+/g, ' ');
 };
 
+// ===== Helpers: filtros de fechas y semanas ISO =====
+
+// Clone before setHours — never mutate state Dates
+const filterLeadsByDate = (leads: Lead[], from: Date, to: Date): Lead[] => {
+  const fromMs = new Date(from).setHours(0, 0, 0, 0);
+  const toMs   = new Date(to).setHours(23, 59, 59, 999);
+  return leads.filter(l => {
+    const d = new Date(l.fechaContacto || l.created_at || '').getTime();
+    return !isNaN(d) && d >= fromMs && d <= toMs;
+  });
+};
+
+const filterLlamadasByDate = (llamadas: LlamadaAgendada[], from: Date, to: Date): LlamadaAgendada[] => {
+  const fromMs = new Date(from).setHours(0, 0, 0, 0);
+  const toMs   = new Date(to).setHours(23, 59, 59, 999);
+  return llamadas.filter(l => {
+    const d = new Date(l.created_at).getTime();
+    return !isNaN(d) && d >= fromMs && d <= toMs;
+  });
+};
+
+const filterLlamadasByInicio = (llamadas: LlamadaAgendada[], from: Date, to: Date): LlamadaAgendada[] => {
+  const fromMs = new Date(from).setHours(0, 0, 0, 0);
+  const toMs   = new Date(to).setHours(23, 59, 59, 999);
+  return llamadas.filter(l => {
+    const d = new Date(l.inicio || l.created_at || '').getTime();
+    return !isNaN(d) && d >= fromMs && d <= toMs;
+  });
+};
+
+// Returns the Monday of the ISO week containing d
+const getISOWeekStart = (d: Date): Date => {
+  const copy = new Date(d);
+  const day = copy.getDay(); // 0=Sun … 6=Sat
+  const diff = (day === 0 ? -6 : 1 - day); // shift to Monday
+  copy.setDate(copy.getDate() + diff);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+};
+
+// Returns ISO week number (1–53)
+const getISOWeek = (d: Date): number => {
+  const copy = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = copy.getUTCDay() || 7;
+  copy.setUTCDate(copy.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(copy.getUTCFullYear(), 0, 1));
+  return Math.ceil((((copy.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+};
+
+// Generates one ISO date string per calendar day in [from, to]
+const eachDayInRange = (from: Date, to: Date): string[] => {
+  const days: string[] = [];
+  const cur = new Date(from); cur.setHours(0, 0, 0, 0);
+  const end = new Date(to);   end.setHours(23, 59, 59, 999);
+  while (cur <= end) {
+    days.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+};
+
+// Parses <input type="date"> value as LOCAL date (avoids UTC midnight → day-before bug)
+const parseInputDate = (v: string): Date => {
+  const [y, m, d] = v.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// Formats a Date as YYYY-MM-DD for <input type="date"> value prop
+const toInputValue = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 // ===== Helper: empty state para charts sin datos =====
 const EmptyChart = ({ message = 'Sin datos en el período' }: { message?: string }) => (
   <div className="flex h-[350px] w-full items-center justify-center bg-slate-50 rounded-lg text-sm text-slate-500">
@@ -47,15 +119,43 @@ const EmptyChart = ({ message = 'Sin datos en el período' }: { message?: string
   </div>
 );
 
+type Preset = '7d' | '30d' | '90d' | 'todo' | 'custom';
+
 export default function Page() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [llamadas, setLlamadasData] = useState<LlamadaAgendada[]>([]);
   const [isLoadingLlamadas, setIsLoadingLlamadas] = useState(true);
+  const [preset, setPreset] = useState<Preset>('30d');
+  const [dateFrom, setDateFrom] = useState<Date>(() => {
+    const d = new Date(); d.setDate(d.getDate() - 29); d.setHours(0, 0, 0, 0); return d;
+  });
+  const [dateTo, setDateTo] = useState<Date>(() => {
+    const d = new Date(); d.setHours(23, 59, 59, 999); return d;
+  });
+
+  const earliestDate = useMemo(() => {
+    if (!leads.length) { const d = new Date(); d.setDate(d.getDate() - 30); return d; }
+    return leads.reduce((min, l) => {
+      const d = new Date(l.fechaContacto || l.created_at || '');
+      return !isNaN(d.getTime()) && d < min ? d : min;
+    }, new Date());
+  }, [leads]);
+
+  const applyPreset = (p: Preset) => {
+    const now = new Date();
+    const to = new Date(now); to.setHours(23, 59, 59, 999);
+    setPreset(p);
+    setDateTo(to);
+    if (p === '7d')  { const f = new Date(now); f.setDate(f.getDate() - 6);  f.setHours(0, 0, 0, 0); setDateFrom(f); }
+    if (p === '30d') { const f = new Date(now); f.setDate(f.getDate() - 29); f.setHours(0, 0, 0, 0); setDateFrom(f); }
+    if (p === '90d') { const f = new Date(now); f.setDate(f.getDate() - 89); f.setHours(0, 0, 0, 0); setDateFrom(f); }
+    if (p === 'todo') { const f = new Date(earliestDate); f.setHours(0, 0, 0, 0); setDateFrom(f); }
+  };
 
   useEffect(() => {
     const now = new Date();
-    const past30 = new Date(now); past30.setDate(past30.getDate() - 30);
+    const past90 = new Date(now); past90.setDate(past90.getDate() - 90);
     const future7 = new Date(now); future7.setDate(future7.getDate() + 7);
 
     setIsLoading(true);
@@ -65,7 +165,7 @@ export default function Page() {
       getAllLeads()
         .then((d) => { setLeads(d); setIsLoading(false); })
         .catch((e) => { console.error('[dashboard] leads error:', e); setIsLoading(false); }),
-      getLlamadasInRange(past30, future7)
+      getLlamadasInRange(past90, future7)
         .then((d) => { setLlamadasData(d); setIsLoadingLlamadas(false); })
         .catch((e) => { console.error('[dashboard] llamadas error:', e); setIsLoadingLlamadas(false); }),
     ]);
@@ -73,38 +173,21 @@ export default function Page() {
 
   // Agrupar leads por fecha
   const leadsByDate = useMemo(() => {
+    const dates = eachDayInRange(dateFrom, dateTo);
     const grouped: Record<string, { total: number; tibios: number; frios: number; calientes: number }> = {};
-    
-    // Obtener los últimos 30 días
-    const today = new Date();
-    const dates: string[] = [];
-    
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      dates.push(dateStr);
-      grouped[dateStr] = { total: 0, tibios: 0, frios: 0, calientes: 0 };
-    }
+    dates.forEach(d => { grouped[d] = { total: 0, tibios: 0, frios: 0, calientes: 0 }; });
 
-    // Contar leads por fecha
-    leads.forEach(lead => {
-      const leadDate = new Date(lead.fechaContacto || lead.created_at || new Date());
-      const dateStr = leadDate.toISOString().split('T')[0];
-      
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    filtered.forEach(lead => {
+      const dateStr = new Date(lead.fechaContacto || lead.created_at || '').toISOString().split('T')[0];
       if (grouped[dateStr] !== undefined) {
         grouped[dateStr].total++;
-        if (lead.estado === 'tibio') {
-          grouped[dateStr].tibios++;
-        } else if (lead.estado === 'frío') {
-          grouped[dateStr].frios++;
-        } else if (lead.estado === 'caliente') {
-          grouped[dateStr].calientes++;
-        }
+        if (lead.estado === 'tibio') grouped[dateStr].tibios++;
+        else if (lead.estado === 'frío') grouped[dateStr].frios++;
+        else if (lead.estado === 'caliente') grouped[dateStr].calientes++;
       }
     });
 
-    // Convertir a array para el gráfico
     return dates.map(date => ({
       date,
       leads: grouped[date].total,
@@ -112,7 +195,7 @@ export default function Page() {
       frios: grouped[date].frios,
       calientes: grouped[date].calientes,
     }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   // Obtener todas las campañas únicas de propiedad_interes
   const uniqueCampaigns = useMemo(() => {
@@ -127,46 +210,30 @@ export default function Page() {
 
   // Agrupar leads por campaña y fecha
   const leadsByCampaign = useMemo(() => {
-    const today = new Date();
-    const dates: string[] = [];
-    
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      dates.push(dateStr);
-    }
+    const dates = eachDayInRange(dateFrom, dateTo);
 
     // Crear estructura para cada campaña
     const campaignData: Record<string, Record<string, number>> = {};
-    
-    // Inicializar todas las campañas con 0 para todas las fechas
     uniqueCampaigns.forEach(campaign => {
       campaignData[campaign] = {};
-      dates.forEach(date => {
-        campaignData[campaign][date] = 0;
-      });
+      dates.forEach(date => { campaignData[campaign][date] = 0; });
     });
 
-    // Contar leads por campaña y fecha
-    leads.forEach(lead => {
+    // Contar leads por campaña y fecha (sólo en el rango)
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    filtered.forEach(lead => {
       if (lead.propiedad_interes && lead.propiedad_interes.trim() !== '') {
         const campaign = lead.propiedad_interes.trim();
-        const leadDate = new Date(lead.fechaContacto || lead.created_at || new Date());
-        const dateStr = leadDate.toISOString().split('T')[0];
-        
+        const dateStr = new Date(lead.fechaContacto || lead.created_at || '').toISOString().split('T')[0];
         if (campaignData[campaign] && campaignData[campaign][dateStr] !== undefined) {
           campaignData[campaign][dateStr]++;
         }
       }
     });
 
-    // Convertir a formato para el gráfico
-    // Crear un objeto con todas las campañas como series
     const result = dates.map(date => {
       const dataPoint: any = { date };
       uniqueCampaigns.forEach(campaign => {
-        // Usar un nombre de clave seguro para la campaña (reemplazar caracteres especiales)
         const safeKey = campaign.replace(/[^a-zA-Z0-9]/g, '_');
         dataPoint[safeKey] = campaignData[campaign][date] || 0;
       });
@@ -174,7 +241,7 @@ export default function Page() {
     });
 
     return { data: result, campaigns: uniqueCampaigns };
-  }, [leads, uniqueCampaigns]);
+  }, [leads, uniqueCampaigns, dateFrom, dateTo]);
 
   // Configuración del gráfico de campañas (generar colores dinámicamente)
   const campaignsChartConfig = useMemo(() => {
@@ -206,41 +273,27 @@ export default function Page() {
 
   // Datos individuales por campaña para gráficos separados
   const individualCampaignsData = useMemo(() => {
-    const today = new Date();
-    const dates: string[] = [];
-    
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      dates.push(dateStr);
-    }
+    const dates = eachDayInRange(dateFrom, dateTo);
 
     const campaignsData: Record<string, Array<{ date: string; leads: number }>> = {};
-    
-    // Inicializar todas las campañas
     uniqueCampaigns.forEach(campaign => {
       campaignsData[campaign] = dates.map(date => ({ date, leads: 0 }));
     });
 
-    // Contar leads por campaña y fecha
-    leads.forEach(lead => {
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    filtered.forEach(lead => {
       if (lead.propiedad_interes && lead.propiedad_interes.trim() !== '') {
         const campaign = lead.propiedad_interes.trim();
-        const leadDate = new Date(lead.fechaContacto || lead.created_at || new Date());
-        const dateStr = leadDate.toISOString().split('T')[0];
-        
+        const dateStr = new Date(lead.fechaContacto || lead.created_at || '').toISOString().split('T')[0];
         if (campaignsData[campaign]) {
           const dateIndex = campaignsData[campaign].findIndex(d => d.date === dateStr);
-          if (dateIndex !== -1) {
-            campaignsData[campaign][dateIndex].leads++;
-          }
+          if (dateIndex !== -1) campaignsData[campaign][dateIndex].leads++;
         }
       }
     });
 
     return campaignsData;
-  }, [leads, uniqueCampaigns]);
+  }, [leads, uniqueCampaigns, dateFrom, dateTo]);
 
   // Configuración del gráfico
   const chartConfig: ChartConfig = {
@@ -264,35 +317,24 @@ export default function Page() {
 
   // Calcular totales
   const totalLeads = leads.length;
-  const leadsLast7Days = useMemo(() => {
-    const today = new Date();
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    return leads.filter(lead => {
-      const leadDate = new Date(lead.fechaContacto || lead.created_at || new Date());
-      return leadDate >= sevenDaysAgo;
-    }).length;
-  }, [leads]);
+  const leadsEnElPeriodo = useMemo(() =>
+    filterLeadsByDate(leads, dateFrom, dateTo).length,
+    [leads, dateFrom, dateTo]
+  );
 
-  const leadsLast30Days = useMemo(() => {
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    return leads.filter(lead => {
-      const leadDate = new Date(lead.fechaContacto || lead.created_at || new Date());
-      return leadDate >= thirtyDaysAgo;
-    }).length;
-  }, [leads]);
+  const llamadasEnElPeriodo = useMemo(() =>
+    filterLlamadasByDate(llamadas, dateFrom, dateTo).length,
+    [llamadas, dateFrom, dateTo]
+  );
 
   // ===== Grupo 1: Pipeline & Conversión =====
 
   // T5 — funnelData (R1): funnel de estados
   const funnelData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const canonicalOrder = ['frío', 'tibio', 'caliente', 'llamada', 'visita'];
     const counts: Record<string, number> = {};
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const e = l.estado ?? 'inicial';
       const key = canonicalOrder.includes(e) ? e : '__otros__';
       counts[key] = (counts[key] || 0) + 1;
@@ -304,7 +346,6 @@ export default function Page() {
       rows.push({ name: 'Otros', value: counts['__otros__'], fill: NEUTRAL_GRAY });
     }
     rows.sort((a, b) => {
-      // canonical order first, then by value for others
       const ia = canonicalOrder.indexOf(a.name.toLowerCase());
       const ib = canonicalOrder.indexOf(b.name.toLowerCase());
       if (ia !== -1 && ib !== -1) return ia - ib;
@@ -313,14 +354,15 @@ export default function Page() {
       return b.value - a.value;
     });
     return rows;
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const funnelChartConfig: ChartConfig = { value: { label: 'Leads', color: '#1E90FF' } };
 
   // T6 — estadoDistData (R2): distribución por estado para donut
   const estadoDistData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const counts: Record<string, number> = {};
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const e = l.estado ?? 'inicial';
       counts[e] = (counts[e] || 0) + 1;
     });
@@ -329,7 +371,7 @@ export default function Page() {
       value,
       fill: ESTADO_COLORS[name] ?? NEUTRAL_GRAY,
     }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const estadoDistConfig: ChartConfig = Object.fromEntries(
     estadoDistData.map(d => [d.name, { label: d.name, color: d.fill }])
@@ -337,27 +379,22 @@ export default function Page() {
 
   // T7 — kpiConversionLlamadas (R3): tasa de conversión
   const kpiConversionLlamadas = useMemo(() => {
-    const last30 = new Date(); last30.setDate(last30.getDate() - 30);
-    const relevant = llamadas.filter(l => {
-      try {
-        const d = new Date(l.created_at);
-        return !isNaN(d.getTime()) && d >= last30;
-      } catch { return false; }
-    });
+    const relevant = filterLlamadasByDate(llamadas, dateFrom, dateTo);
     const realizadas = relevant.filter(l => l.estado === 'realizada').length;
     const agendadas = relevant.filter(l => l.estado === 'agendada').length;
     const den = realizadas + agendadas;
     const ratio = den > 0 ? Math.round((realizadas / den) * 1000) / 10 : null;
     const leadsMarcados = leads.filter(l => l.llamada_agendada === true).length;
     return { ratio, realizadas, agendadas, den, leadsMarcados };
-  }, [llamadas, leads]);
+  }, [llamadas, leads, dateFrom, dateTo]);
 
   // ===== Grupo 2: Calidad y Origen =====
 
   // T8 — calidadData (R4)
   const calidadData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const counts = { 1: 0, 2: 0, 3: 0, sin: 0 };
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       if (l.calidad === 1) counts[1]++;
       else if (l.calidad === 2) counts[2]++;
       else if (l.calidad === 3) counts[3]++;
@@ -369,7 +406,7 @@ export default function Page() {
       { name: 'Calidad 3', value: counts[3], fill: '#EF4444' },
       { name: 'Sin calificar', value: counts.sin, fill: NEUTRAL_GRAY },
     ].filter(d => d.value > 0);
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const calidadConfig: ChartConfig = Object.fromEntries(
     calidadData.map(d => [d.name, { label: d.name, color: d.fill }])
@@ -377,38 +414,35 @@ export default function Page() {
 
   // T9 — origenData (R5)
   const origenData = useMemo(() => {
-    const syh = leads.filter(l => !l.phone_from || l.phone_from.trim() === '').length;
-    const pago = leads.length - syh;
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
+    const syh = filteredLeads.filter(l => !l.phone_from || l.phone_from.trim() === '').length;
+    const pago = filteredLeads.length - syh;
     return [
       { name: 'S&H (Orgánico)', value: syh, fill: '#10B981' },
       { name: 'Campaña Paga', value: pago, fill: '#F97316' },
     ].filter(d => d.value > 0);
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const origenConfig: ChartConfig = Object.fromEntries(
     origenData.map(d => [d.name, { label: d.name, color: d.fill }])
   );
 
-  // origenByDate: leads de últimos 30 días por tipo de origen
+  // origenByDate: leads por tipo de origen en el período seleccionado
   const origenByDate = useMemo(() => {
-    const today = new Date();
-    const dates: string[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().split('T')[0]);
-    }
+    const dates = eachDayInRange(dateFrom, dateTo);
     const grouped: Record<string, { syh: number; pago: number }> = {};
     dates.forEach(d => { grouped[d] = { syh: 0, pago: 0 }; });
-    leads.forEach(l => {
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    filtered.forEach(l => {
       try {
-        const d = new Date(l.fechaContacto || l.created_at || new Date()).toISOString().split('T')[0];
+        const d = new Date(l.fechaContacto || l.created_at || '').toISOString().split('T')[0];
         if (!grouped[d]) return;
         if (!l.phone_from || l.phone_from.trim() === '') grouped[d].syh++;
         else grouped[d].pago++;
       } catch { /* skip malformed dates */ }
     });
     return dates.map(d => ({ date: d, syh: grouped[d].syh, pago: grouped[d].pago }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const origenAreaConfig: ChartConfig = {
     syh: { label: 'S&H', color: '#10B981' },
@@ -417,6 +451,7 @@ export default function Page() {
 
   // T10 — etiquetasData (R6): 8 etiquetas booleanas
   const etiquetasData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const tags = [
       { key: 'llamada_agendada', label: 'Llamada agendada' },
       { key: 'llamar', label: 'Llamar' },
@@ -430,11 +465,11 @@ export default function Page() {
     return tags
       .map((t, i) => ({
         name: t.label,
-        value: leads.filter(l => (l as any)[t.key] === true).length,
+        value: filteredLeads.filter(l => (l as any)[t.key] === true).length,
         fill: CHART_COLORS[i % CHART_COLORS.length],
       }))
       .sort((a, b) => b.value - a.value);
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const etiquetasConfig: ChartConfig = { value: { label: 'Leads', color: '#1E90FF' } };
 
@@ -442,9 +477,10 @@ export default function Page() {
 
   // T11 — zonasTopData (R7): top 10 zonas con normalización simple
   const zonasTopData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const counts: Record<string, number> = {};
     const firstLabel: Record<string, string> = {};
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const z = l.zonaInteres || l.zona || '';
       if (!z.trim()) return;
       const norm = normalizeZona(z);
@@ -459,14 +495,15 @@ export default function Page() {
         value,
         fill: '#1E90FF',
       }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const zonasConfig: ChartConfig = { value: { label: 'Leads', color: '#1E90FF' } };
 
   // T12 — tipoPropiedadData (R8)
   const tipoPropiedadData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const counts: Record<string, number> = {};
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const t = l.tipo_propiedad || l.tipoPropiedad || '';
       const key = t.trim() || 'Sin especificar';
       counts[key] = (counts[key] || 0) + 1;
@@ -476,7 +513,7 @@ export default function Page() {
       value,
       fill: name === 'Sin especificar' ? NEUTRAL_GRAY : CHART_COLORS[i % CHART_COLORS.length],
     }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const tipoPropiedadConfig: ChartConfig = Object.fromEntries(
     tipoPropiedadData.map(d => [d.name, { label: d.name, color: d.fill }])
@@ -484,8 +521,9 @@ export default function Page() {
 
   // T13 — motivoData (R9)
   const motivoData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const counts: Record<string, number> = {};
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const m = l.intencion || l.motivoInteres || '';
       const key = m.trim() || 'Sin especificar';
       counts[key] = (counts[key] || 0) + 1;
@@ -495,7 +533,7 @@ export default function Page() {
       value,
       fill: name === 'Sin especificar' ? NEUTRAL_GRAY : CHART_COLORS[i % CHART_COLORS.length],
     }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const motivoConfig: ChartConfig = Object.fromEntries(
     motivoData.map(d => [d.name, { label: d.name, color: d.fill }])
@@ -503,6 +541,7 @@ export default function Page() {
 
   // T14 — presupuestoData (R10): 5 buckets
   const presupuestoData = useMemo(() => {
+    const filteredLeads = filterLeadsByDate(leads, dateFrom, dateTo);
     const buckets = [
       { label: 'Sin dato', count: 0, fill: NEUTRAL_GRAY },
       { label: '0–50k', count: 0, fill: '#BAE6FD' },
@@ -510,7 +549,7 @@ export default function Page() {
       { label: '100–200k', count: 0, fill: '#38BDF8' },
       { label: '+200k', count: 0, fill: '#0284C7' },
     ];
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const p = l.presupuesto ?? 0;
       const num = typeof p === 'number' ? p : parseFloat(String(p));
       if (!num || isNaN(num) || num === 0) { buckets[0].count++; return; }
@@ -520,21 +559,15 @@ export default function Page() {
       buckets[4].count++;
     });
     return buckets.map(b => ({ name: b.label, value: b.count, fill: b.fill }));
-  }, [leads]);
+  }, [leads, dateFrom, dateTo]);
 
   const presupuestoConfig: ChartConfig = { value: { label: 'Leads', color: '#1E90FF' } };
 
   // ===== Grupo 4: Operación de Llamadas =====
 
-  // T15 — llamadasEstadoData (R11): llamadas por estado (últimos 30d)
+  // T15 — llamadasEstadoData (R11): llamadas por estado en el período seleccionado
   const llamadasEstadoData = useMemo(() => {
-    const last30 = new Date(); last30.setDate(last30.getDate() - 30);
-    const recent = llamadas.filter(l => {
-      try {
-        const d = new Date(l.created_at);
-        return !isNaN(d.getTime()) && d >= last30;
-      } catch { return false; }
-    });
+    const recent = filterLlamadasByDate(llamadas, dateFrom, dateTo);
     const counts = { agendada: 0, realizada: 0, cancelada: 0, otros: 0 };
     recent.forEach(l => {
       if (l.estado === 'agendada') counts.agendada++;
@@ -548,7 +581,7 @@ export default function Page() {
       { name: 'Cancelada', value: counts.cancelada, fill: '#EF4444' },
       { name: 'Otros', value: counts.otros, fill: NEUTRAL_GRAY },
     ].filter(d => d.value > 0);
-  }, [llamadas]);
+  }, [llamadas, dateFrom, dateTo]);
 
   const llamadasEstadoConfig: ChartConfig = Object.fromEntries(
     llamadasEstadoData.map(d => [d.name, { label: d.name, color: d.fill }])
@@ -581,15 +614,9 @@ export default function Page() {
 
   const llamadas7dConfig: ChartConfig = { value: { label: 'Llamadas', color: '#3B82F6' } };
 
-  // T17 — llamadasPorAgenteData (R13): top 10 agentes (últimos 30d)
+  // T17 — llamadasPorAgenteData (R13): top 10 agentes en el período seleccionado
   const llamadasPorAgenteData = useMemo(() => {
-    const last30 = new Date(); last30.setDate(last30.getDate() - 30);
-    const recent = llamadas.filter(l => {
-      try {
-        const d = new Date(l.created_at);
-        return !isNaN(d.getTime()) && d >= last30;
-      } catch { return false; }
-    });
+    const recent = filterLlamadasByDate(llamadas, dateFrom, dateTo);
     const counts: Record<string, number> = {};
     recent.forEach(l => {
       const a = l.agente?.trim() || 'Sin asignar';
@@ -599,9 +626,70 @@ export default function Page() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([name, value], i) => ({ name, value, fill: CHART_COLORS[i % CHART_COLORS.length] }));
-  }, [llamadas]);
+  }, [llamadas, dateFrom, dateTo]);
 
   const agenteConfig: ChartConfig = { value: { label: 'Llamadas', color: '#1E90FF' } };
+
+  // T15 — leadsPorSemana: leads agrupados por semana ISO
+  const leadsPorSemana = useMemo(() => {
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    const byWeek: Record<string, { count: number; monday: Date }> = {};
+    filtered.forEach(l => {
+      const d = new Date(l.fechaContacto || l.created_at || '');
+      if (isNaN(d.getTime())) return;
+      const monday = getISOWeekStart(d);
+      const key = monday.toISOString().split('T')[0];
+      if (!byWeek[key]) byWeek[key] = { count: 0, monday };
+      byWeek[key].count++;
+    });
+    return Object.entries(byWeek)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, { count, monday }]) => {
+        const weekNum = getISOWeek(monday);
+        const dd = String(monday.getDate()).padStart(2, '0');
+        const mm = String(monday.getMonth() + 1).padStart(2, '0');
+        return { name: `Sem ${weekNum} (${dd}/${mm})`, value: count, fill: '#1E90FF' };
+      });
+  }, [leads, dateFrom, dateTo]);
+
+  const leadsPorSemanaConfig: ChartConfig = { value: { label: 'Leads', color: '#1E90FF' } };
+
+  // T16 — campaniaPieData: torta de leads por propiedad_interes (top 8 + Otros)
+  const campaniaPieData = useMemo(() => {
+    const filtered = filterLeadsByDate(leads, dateFrom, dateTo);
+    const counts: Record<string, number> = {};
+    filtered.forEach(l => {
+      const key = l.propiedad_interes?.trim() || 'Sin campaña';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a);
+    const top8 = sorted.slice(0, 8);
+    const rest = sorted.slice(8).reduce((s, [, v]) => s + v, 0);
+    const result = top8.map(([name, value], i) => ({ name, value, fill: CHART_COLORS[i % CHART_COLORS.length] }));
+    if (rest > 0) result.push({ name: 'Otros', value: rest, fill: NEUTRAL_GRAY });
+    return result;
+  }, [leads, dateFrom, dateTo]);
+
+  const campaniaPieConfig: ChartConfig = Object.fromEntries(
+    campaniaPieData.map(d => [d.name, { label: d.name, color: d.fill }])
+  );
+
+  // T17 — tendenciaLlamadasData: llamadas realizadas por día en el período
+  const tendenciaLlamadasData = useMemo(() => {
+    const realizadas = filterLlamadasByInicio(llamadas, dateFrom, dateTo)
+      .filter(l => l.estado === 'realizada');
+    const counts: Record<string, number> = {};
+    eachDayInRange(dateFrom, dateTo).forEach(d => { counts[d] = 0; });
+    realizadas.forEach(l => {
+      const d = new Date(l.inicio || l.created_at || '');
+      if (isNaN(d.getTime())) return;
+      const key = d.toISOString().split('T')[0];
+      if (counts[key] !== undefined) counts[key]++;
+    });
+    return Object.entries(counts).map(([date, value]) => ({ date, value }));
+  }, [llamadas, dateFrom, dateTo]);
+
+  const tendenciaLlamadasConfig: ChartConfig = { value: { label: 'Realizadas', color: '#10B981' } };
 
   if (isLoading) {
     return (
@@ -711,6 +799,42 @@ export default function Page() {
               </ol>
             </nav>
           </div>
+
+        {/* Barra de filtro de fechas */}
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          {(['7d', '30d', '90d', 'todo'] as Preset[]).map((p) => {
+            const labels: Record<Preset, string> = { '7d': '7 días', '30d': '30 días', '90d': '90 días', 'todo': 'Todo', 'custom': '' };
+            return (
+              <Button
+                key={p}
+                size="sm"
+                variant={preset === p ? 'default' : 'outline'}
+                onClick={() => applyPreset(p)}
+              >
+                {labels[p]}
+              </Button>
+            );
+          })}
+          <div className="flex items-center gap-1 ml-2">
+            <label className="text-sm text-slate-600">Desde</label>
+            <input
+              type="date"
+              className="border border-slate-300 rounded px-2 py-1 text-sm"
+              value={toInputValue(dateFrom)}
+              onChange={e => { if (!e.target.value) return; setDateFrom(parseInputDate(e.target.value)); setPreset('custom'); }}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-sm text-slate-600">Hasta</label>
+            <input
+              type="date"
+              className="border border-slate-300 rounded px-2 py-1 text-sm"
+              value={toInputValue(dateTo)}
+              onChange={e => { if (!e.target.value) return; setDateTo(parseInputDate(e.target.value)); setPreset('custom'); }}
+            />
+          </div>
+        </div>
+
         <div>
           <h1 className="text-xl font-semibold text-slate-800 mb-2">Dashboard</h1>
           <p className="text-gray-600">Métricas y estadísticas de leads</p>
@@ -749,7 +873,7 @@ export default function Page() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Últimos 7 días
+                En el período
               </CardTitle>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -766,9 +890,9 @@ export default function Page() {
               </svg>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{leadsLast7Days}</div>
+              <div className="text-2xl font-bold">{leadsEnElPeriodo}</div>
               <p className="text-xs text-muted-foreground">
-                Leads ingresados esta semana
+                Leads ingresados en el período
               </p>
             </CardContent>
           </Card>
@@ -776,7 +900,7 @@ export default function Page() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Últimos 30 días
+                Llamadas en el período
               </CardTitle>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -792,9 +916,9 @@ export default function Page() {
               </svg>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{leadsLast30Days}</div>
+              <div className="text-2xl font-bold">{llamadasEnElPeriodo}</div>
               <p className="text-xs text-muted-foreground">
-                Leads ingresados este mes
+                Llamadas en el período seleccionado
               </p>
             </CardContent>
           </Card>
@@ -818,13 +942,26 @@ export default function Page() {
           </CardContent>
         </Card>
 
+        {/* Gráfico: Leads por Semana */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Leads por Semana</CardTitle>
+            <CardDescription>Leads agrupados por semana ISO en el período seleccionado</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {leadsPorSemana.length === 0
+              ? <EmptyChart message="Sin leads en el período seleccionado" />
+              : <ChartBar data={leadsPorSemana} config={leadsPorSemanaConfig} layout="vertical" />}
+          </CardContent>
+        </Card>
+
         {/* Gráfico de leads por campaña */}
         {uniqueCampaigns.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Leads por Campaña</CardTitle>
               <CardDescription>
-                Cantidad de leads ingresados por campaña (propiedad_interes) en los últimos 30 días
+                Cantidad de leads ingresados por campaña (propiedad_interes) en el período seleccionado
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -858,7 +995,7 @@ export default function Page() {
                     <CardHeader>
                       <CardTitle className="text-sm">{campaign}</CardTitle>
                       <CardDescription className="text-xs">
-                        Leads de esta campaña en los últimos 30 días
+                        Leads de esta campaña en el período seleccionado
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -889,7 +1026,7 @@ export default function Page() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-medium">Tasa de Conversión</CardTitle>
-                <CardDescription>Llamadas realizadas vs. total (últimos 30d)</CardDescription>
+                <CardDescription>Llamadas realizadas vs. total (período seleccionado)</CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingLlamadas ? (
@@ -900,7 +1037,7 @@ export default function Page() {
                   <>
                     <div className="text-3xl font-bold text-slate-800">{kpiConversionLlamadas.ratio}%</div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {kpiConversionLlamadas.realizadas} realizadas / {kpiConversionLlamadas.den} totales (ult. 30d)
+                      {kpiConversionLlamadas.realizadas} realizadas / {kpiConversionLlamadas.den} totales (período)
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {kpiConversionLlamadas.leadsMarcados} leads marcados para llamar
@@ -949,7 +1086,7 @@ export default function Page() {
                 <CardDescription>Distribución de calidad 1–3 asignada por el agente</CardDescription>
               </CardHeader>
               <CardContent>
-                {leads.length === 0
+                {calidadData.length === 0
                   ? <EmptyChart />
                   : <ChartPie data={calidadData} config={calidadConfig} showLegend />}
               </CardContent>
@@ -962,7 +1099,7 @@ export default function Page() {
                 <CardDescription>S&H orgánico vs campaña paga</CardDescription>
               </CardHeader>
               <CardContent>
-                {leads.length === 0
+                {origenData.length === 0
                   ? <EmptyChart />
                   : <ChartPie data={origenData} config={origenConfig} showLegend />}
               </CardContent>
@@ -978,16 +1115,29 @@ export default function Page() {
                 <ChartBar data={etiquetasData} config={etiquetasConfig} layout="vertical" />
               </CardContent>
             </Card>
+
+            {/* Torta: Leads por Campaña */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Leads por Campaña</CardTitle>
+                <CardDescription>Distribución de leads por propiedad_interes en el período</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {campaniaPieData.length === 0
+                  ? <EmptyChart message="Sin leads con campaña en el período" />
+                  : <ChartPie data={campaniaPieData} config={campaniaPieConfig} showLegend />}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Origen por fecha área apilada */}
           <Card>
             <CardHeader>
               <CardTitle>Origen por Fecha</CardTitle>
-              <CardDescription>S&H vs campaña paga en los últimos 30 días</CardDescription>
+              <CardDescription>S&H vs campaña paga en el período seleccionado</CardDescription>
             </CardHeader>
             <CardContent>
-              {leads.length === 0
+              {origenByDate.every(d => d.syh === 0 && d.pago === 0)
                 ? <EmptyChart />
                 : <ChartAreaInteractive data={origenByDate} config={origenAreaConfig} dateKey="date" valueKey="syh" />}
             </CardContent>
@@ -1018,7 +1168,7 @@ export default function Page() {
                 <CardDescription className="text-xs">Distribución de búsqueda</CardDescription>
               </CardHeader>
               <CardContent>
-                {leads.length === 0
+                {tipoPropiedadData.length === 0
                   ? <EmptyChart />
                   : <ChartPie data={tipoPropiedadData} config={tipoPropiedadConfig} showLegend />}
               </CardContent>
@@ -1031,7 +1181,7 @@ export default function Page() {
                 <CardDescription className="text-xs">Inversión, mudanza, etc.</CardDescription>
               </CardHeader>
               <CardContent>
-                {leads.length === 0
+                {motivoData.length === 0
                   ? <EmptyChart />
                   : <ChartPie data={motivoData} config={motivoConfig} showLegend />}
               </CardContent>
@@ -1058,13 +1208,13 @@ export default function Page() {
             <Card>
               <CardHeader>
                 <CardTitle>Estado de Llamadas</CardTitle>
-                <CardDescription>Distribución últimos 30 días</CardDescription>
+                <CardDescription>Distribución en el período seleccionado</CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingLlamadas
                   ? <Skeleton className="h-[350px] w-full" />
                   : llamadasEstadoData.length === 0
-                    ? <EmptyChart message="Sin llamadas en los últimos 30 días" />
+                    ? <EmptyChart message="Sin llamadas en el período seleccionado" />
                     : <ChartPie data={llamadasEstadoData} config={llamadasEstadoConfig} showLegend />}
               </CardContent>
             </Card>
@@ -1091,7 +1241,7 @@ export default function Page() {
             <Card>
               <CardHeader>
                 <CardTitle>Llamadas por Agente</CardTitle>
-                <CardDescription>Top 10 agentes — últimos 30 días</CardDescription>
+                <CardDescription>Top 10 agentes — período seleccionado</CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingLlamadas
@@ -1099,6 +1249,21 @@ export default function Page() {
                   : llamadasPorAgenteData.length === 0
                     ? <EmptyChart message="Sin llamadas registradas" />
                     : <ChartBar data={llamadasPorAgenteData} config={agenteConfig} layout="horizontal" />}
+              </CardContent>
+            </Card>
+
+            {/* Área: Tendencia de Llamadas Realizadas */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Tendencia de Llamadas Realizadas</CardTitle>
+                <CardDescription>Llamadas realizadas por día en el período seleccionado</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingLlamadas
+                  ? <Skeleton className="h-[350px] w-full" />
+                  : tendenciaLlamadasData.every(d => d.value === 0)
+                    ? <EmptyChart message="Sin llamadas realizadas en el período" />
+                    : <ChartAreaInteractive data={tendenciaLlamadasData} config={tendenciaLlamadasConfig} dateKey="date" valueKey="value" />}
               </CardContent>
             </Card>
           </div>
