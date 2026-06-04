@@ -20,6 +20,9 @@ import BulkSendModal, { BulkSendResult } from '../../components/BulkSendModal';
 /** Número de origen (`phone_from`) usado en filtros de la tabla. */
 const PHONE_FROM_FILTER_TARGET = '+5491141872290';
 
+const PAGE_SIZE = 300;
+const MAX_PAGE_BUTTONS = 7;
+
 type PhoneFromTableFilter = '' | 'only_target' | 'exclude_target';
 
 function formatDateTime(value: string | undefined): string {
@@ -63,6 +66,107 @@ function getServicioPillClass(servicio: string): string {
   return 'bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-600/20';
 }
 
+type PageItem = number | 'ellipsis';
+
+function computePageList(current: number, total: number): PageItem[] {
+  if (total <= MAX_PAGE_BUTTONS) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: PageItem[] = [];
+  pages.push(1);
+
+  if (current <= 4) {
+    for (let p = 2; p <= 5; p++) pages.push(p);
+    pages.push('ellipsis');
+    pages.push(total);
+  } else if (current >= total - 3) {
+    pages.push('ellipsis');
+    for (let p = total - 4; p <= total - 1; p++) pages.push(p);
+    pages.push(total);
+  } else {
+    pages.push('ellipsis');
+    pages.push(current - 1);
+    pages.push(current);
+    pages.push(current + 1);
+    pages.push('ellipsis');
+    pages.push(total);
+  }
+  return pages;
+}
+
+function PaginationControls({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages = computePageList(currentPage, totalPages);
+  const isFirst = currentPage <= 1;
+  const isLast = currentPage >= totalPages;
+
+  const baseBtn =
+    'inline-flex items-center justify-center min-w-[2rem] h-8 px-2 text-xs font-medium rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20';
+  const inactiveBtn = 'border-gray-200 bg-white text-slate-700 hover:bg-slate-50';
+  const activeBtn = 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700';
+  const disabledBtn = 'border-gray-200 bg-white text-slate-300 cursor-not-allowed';
+
+  return (
+    <nav className="flex items-center gap-1" aria-label="Paginación">
+      <button
+        type="button"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={isFirst}
+        aria-disabled={isFirst}
+        className={`${baseBtn} ${isFirst ? disabledBtn : inactiveBtn} gap-1 px-2.5`}
+        aria-label="Página anterior"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        <span className="hidden sm:inline">Anterior</span>
+      </button>
+
+      {pages.map((p, idx) =>
+        p === 'ellipsis' ? (
+          <span key={`e-${idx}`} className="px-1 text-slate-400 select-none" aria-hidden>
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPageChange(p)}
+            aria-current={p === currentPage ? 'page' : undefined}
+            aria-label={`Ir a página ${p}`}
+            className={`${baseBtn} ${p === currentPage ? activeBtn : inactiveBtn}`}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        type="button"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={isLast}
+        aria-disabled={isLast}
+        className={`${baseBtn} ${isLast ? disabledBtn : inactiveBtn} gap-1 px-2.5`}
+        aria-label="Página siguiente"
+      >
+        <span className="hidden sm:inline">Siguiente</span>
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </nav>
+  );
+}
+
 export default function LeadsTablePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
@@ -95,6 +199,7 @@ export default function LeadsTablePage() {
   const [bulkSendOpen, setBulkSendOpen] = useState(false);
   const [bulkSendToast, setBulkSendToast] = useState<{ batchId: string; total: number; efectivo: number } | null>(null);
   const router = useRouter();
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const load = async () => {
@@ -157,6 +262,26 @@ export default function LeadsTablePage() {
     setFilteredLeads(filtered);
   }, [filtered]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE));
+
+  const pagedLeads = useMemo(
+    () => filteredLeads.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredLeads, currentPage]
+  );
+
+  const pageFrom = filteredLeads.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const pageTo = Math.min(currentPage * PAGE_SIZE, filteredLeads.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterEstado, attentionEtiquetasFilter, filterPhoneFrom]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   const handleExportCSV = () => exportLeadsToCSV(filteredLeads, 'leads');
   const handleSaveLead = async (data: Partial<Lead>) => {
     if (!leadToEdit) return;
@@ -216,17 +341,17 @@ export default function LeadsTablePage() {
   };
 
   const allVisibleSelected =
-    filteredLeads.length > 0 && filteredLeads.every((l) => selectedIds.has(l.id));
+    pagedLeads.length > 0 && pagedLeads.every((l) => selectedIds.has(l.id));
   const someVisibleSelected =
-    !allVisibleSelected && filteredLeads.some((l) => selectedIds.has(l.id));
+    !allVisibleSelected && pagedLeads.some((l) => selectedIds.has(l.id));
 
   const toggleSelectAllVisible = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allVisibleSelected) {
-        for (const l of filteredLeads) next.delete(l.id);
+        for (const l of pagedLeads) next.delete(l.id);
       } else {
-        for (const l of filteredLeads) next.add(l.id);
+        for (const l of pagedLeads) next.add(l.id);
       }
       return next;
     });
@@ -521,7 +646,7 @@ export default function LeadsTablePage() {
                         if (el) el.indeterminate = someVisibleSelected;
                       }}
                       onChange={toggleSelectAllVisible}
-                      aria-label="Seleccionar todos los leads visibles"
+                      aria-label={`Seleccionar los ${pagedLeads.length} leads de esta página`}
                     />
                   </th>
                   <th
@@ -551,14 +676,14 @@ export default function LeadsTablePage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
-                {filteredLeads.length === 0 ? (
+                {pagedLeads.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-5 py-12 text-center text-gray-500 text-sm">
                       No hay leads para mostrar. Ajustá los filtros o la búsqueda.
                     </td>
                   </tr>
                 ) : (
-                  filteredLeads.map((lead) => {
+                  pagedLeads.map((lead) => {
                     const booleanTags = getLeadBooleanEtiquetaLabels(lead);
                     const legacyEtiqueta = getEtiqueta(lead);
                     const legacyOk = legacyEtiqueta && legacyEtiqueta !== '—';
@@ -707,6 +832,25 @@ export default function LeadsTablePage() {
               </tbody>
             </table>
           </div>
+          {filteredLeads.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-3 border-t border-gray-100 bg-slate-50/40 px-5 py-3">
+              <p className="text-xs text-slate-500 tabular-nums">
+                Mostrando{' '}
+                <span className="font-medium text-slate-700">{pageFrom.toLocaleString('es-AR')}</span>
+                {'–'}
+                <span className="font-medium text-slate-700">{pageTo.toLocaleString('es-AR')}</span>
+                {' de '}
+                <span className="font-medium text-slate-700">{filteredLeads.length.toLocaleString('es-AR')}</span>
+                {' '}
+                {filteredLeads.length === 1 ? 'lead' : 'leads'}
+              </p>
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+              />
+            </div>
+          )}
         </div>
       </div>
 

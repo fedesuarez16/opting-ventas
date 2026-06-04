@@ -281,6 +281,11 @@ export default function CalendarioSemana() {
                           {llamada.lead?.nombre || llamada.nombre_contacto}
                         </div>
                       )}
+                      {llamada.estado_twilio && (
+                        <div className="truncate text-[10px] opacity-80">
+                          {llamada.estado_twilio}
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>

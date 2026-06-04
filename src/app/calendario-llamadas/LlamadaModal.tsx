@@ -86,6 +86,9 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
   const [resultado, setResultado] = useState<string>(
     isEdit ? (initial.llamada.resultado ?? '') : '',
   );
+  const [agenteTelefono, setAgenteTelefono] = useState<string>(
+    isEdit ? (initial.llamada.agente_telefono ?? '') : '',
+  );
 
   const initialLeadLibre = isEdit && !initial.llamada.lead_id;
   const [modoLead, setModoLead] = useState<'existente' | 'libre'>(
@@ -157,6 +160,7 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
       inicio: inicio.toISOString(),
       fin: fin.toISOString(),
       estado,
+      agente_telefono: agenteTelefono.trim() || null,
     };
 
     setSaving(true);
@@ -383,6 +387,21 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
                 placeholder="Contexto previo, qué hay que tratar, etc."
                 className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
+            </div>
+
+            {/* Teléfono del agente */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground">Teléfono del agente</label>
+              <input
+                type="tel"
+                value={agenteTelefono}
+                onChange={(e) => setAgenteTelefono(e.target.value)}
+                placeholder="+5492215551234"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Número al que se bridgeará la llamada (formato E.164 o solo dígitos).
+              </p>
             </div>
 
             {/* Resultado (solo edit) */}

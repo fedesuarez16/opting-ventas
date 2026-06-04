@@ -26,6 +26,10 @@ export interface LlamadaAgendada {
   estado: EstadoLlamada;
   resultado: string | null;
   agente: string | null;
+  agente_telefono: string | null;
+  twilio_call_sid: string | null;
+  estado_twilio: string | null;
+  grabacion_url: string | null;
   created_at: string;
   updated_at: string;
   lead?: {
@@ -45,10 +49,13 @@ export interface LlamadaInput {
   estado?: EstadoLlamada;
   resultado?: string | null;
   agente?: string | null;
+  agente_telefono?: string | null;
 }
 
 const SELECT_WITH_LEAD = `
-  id, lead_id, nombre_contacto, titulo, notas, inicio, fin, estado, resultado, agente, created_at, updated_at,
+  id, lead_id, nombre_contacto, titulo, notas, inicio, fin, estado, resultado, agente,
+  agente_telefono, twilio_call_sid, estado_twilio, grabacion_url,
+  created_at, updated_at,
   lead:leads ( id, nombre, phone )
 `;
 
@@ -100,6 +107,7 @@ export const createLlamada = async (input: LlamadaInput): Promise<LlamadaAgendad
       estado: input.estado ?? 'agendada',
       resultado: input.resultado ?? null,
       agente: input.agente ?? null,
+      agente_telefono: input.agente_telefono ?? null,
     })
     .select(SELECT_WITH_LEAD)
     .single();
@@ -171,3 +179,10 @@ export const searchLeadsLite = async (query: string, limit = 25): Promise<LeadLi
   }
   return (data ?? []) as LeadLite[];
 };
+
+export function toE164(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return null;
+  return `+${digits}`;
+}
