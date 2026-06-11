@@ -90,6 +90,8 @@ export default function CalendarioSemana() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<LlamadaModalInitial | null>(null);
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -142,6 +144,25 @@ export default function CalendarioSemana() {
   const goNext = () => setWeekStart((d) => addDays(d, 7));
   const goToday = () => setWeekStart(startOfWeek(new Date()));
 
+  const syncCalendly = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch('/api/calendly/sync', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        setSyncMsg(`Error: ${json.error ?? 'desconocido'}`);
+      } else {
+        setSyncMsg(`✓ ${json.created} nuevas, ${json.skipped} ya existían`);
+        fetchLlamadas();
+      }
+    } catch {
+      setSyncMsg('Error de red al sincronizar');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Toolbar */}
@@ -156,6 +177,23 @@ export default function CalendarioSemana() {
         </div>
         <div className="flex items-center gap-2">
           {loading && <span className="text-xs text-muted-foreground">Cargando…</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={syncCalendly}
+            disabled={syncing}
+            title="Importar eventos agendados en Calendly"
+          >
+            {syncing ? 'Sincronizando…' : '↻ Calendly'}
+          </Button>
+          {syncMsg && (
+            <span className={cn(
+              'text-xs',
+              syncMsg.startsWith('Error') ? 'text-red-600' : 'text-emerald-600',
+            )}>
+              {syncMsg}
+            </span>
+          )}
           <Button
             size="sm"
             onClick={() => {
