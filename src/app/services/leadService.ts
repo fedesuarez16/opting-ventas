@@ -247,6 +247,7 @@ const mapLeadRow = (row: any): Lead => {
     whatsapp_id: (row as any).phone ?? row.whatsapp_id ?? undefined, // Usar phone como whatsapp_id para compatibilidad
     phone: (row as any).phone ?? undefined, // Campo phone de la tabla leads (PRIORITARIO)
     phone_from: (row as any).phone_from ?? undefined, // Campo phone_from de la tabla leads
+    servicio: (row as any).servicio ?? null, // Servicio del classifier LLM (passthrough)
     nombre: row.nombre ?? undefined,
     zona: row.zona ?? undefined,
     tipo_propiedad: row.tipo_propiedad ?? undefined,

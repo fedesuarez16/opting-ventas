@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { Phone } from 'lucide-react';
 
 interface MenuItem {
   name: string;
@@ -97,6 +98,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onCollapse }) => {
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           ),
+        },
+        {
+          name: 'Centro de Llamadas',
+          path: '/centro-comando-llamadas',
+          icon: <Phone className="h-[18px] w-[18px]" />,
         },
       ],
     },

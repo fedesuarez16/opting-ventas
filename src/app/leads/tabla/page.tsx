@@ -328,8 +328,12 @@ export default function LeadsTablePage() {
   const getPhone = (l: Lead) => (l as any).phone || (l as any).whatsapp_id || l.telefono || '';
   const getNombre = (l: Lead) => l.nombreCompleto || (l as any).nombre || '—';
   const getEtiqueta = (l: Lead) => (l as any).etiqueta ?? (l as any).propiedad_interes ?? '—';
-  const getServicioLabel = (l: Lead) =>
-    (l.phone_from ?? '') === PHONE_FROM_FILTER_TARGET ? 'Carnet' : 'S&H';
+  const getServicioLabel = (l: Lead) => {
+    if (l.servicio === 'carnet') return 'Carnet';
+    if (l.servicio === 's&h') return 'S&H';
+    // Fallback de transicion: leads pre-clasificacion (servicio null/undefined)
+    return (l.phone_from ?? '') === PHONE_FROM_FILTER_TARGET ? 'Carnet' : 'S&H';
+  };
 
   const toggleRowSelected = (id: string) => {
     setSelectedIds((prev) => {

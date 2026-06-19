@@ -93,6 +93,21 @@ export const getLlamadasByLead = async (leadId: number): Promise<LlamadaAgendada
   return (data ?? []) as LlamadaAgendada[];
 };
 
+export const getLlamadasAll = async (estado?: EstadoLlamada): Promise<LlamadaAgendada[]> => {
+  const supabase = getSupabase();
+  let q = (supabase as any)
+    .from('llamadas_agendadas')
+    .select(SELECT_WITH_LEAD)
+    .order('inicio', { ascending: false });
+  if (estado) q = q.eq('estado', estado);
+  const { data, error } = await q;
+  if (error) {
+    console.error('[llamadasService.getLlamadasAll]', error);
+    throw error;
+  }
+  return (data ?? []) as LlamadaAgendada[];
+};
+
 export const createLlamada = async (input: LlamadaInput): Promise<LlamadaAgendada> => {
   const supabase = getSupabase();
   const { data, error } = await (supabase as any)
@@ -185,4 +200,10 @@ export function toE164(phone: string | null | undefined): string | null {
   const digits = phone.replace(/\D/g, '');
   if (!digits) return null;
   return `+${digits}`;
+}
+
+export function buildConversacionUrl(phone: string | null | undefined): string | null {
+  const e164 = toE164(phone);
+  if (!e164) return null;
+  return `/chat?phoneNumber=${encodeURIComponent(e164)}`;
 }

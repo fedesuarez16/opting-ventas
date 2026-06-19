@@ -22,6 +22,7 @@ export interface Lead {
   whatsapp_id?: string;
   phone?: string; // Campo phone de la tabla leads (PRIORITARIO)
   phone_from?: string; // Campo phone_from de la tabla leads
+  servicio?: 'carnet' | 's&h' | null; // Servicio inferido por el classifier LLM (null = sin clasificar)
   nombre?: string;
   zona?: string;
   tipo_propiedad?: string;

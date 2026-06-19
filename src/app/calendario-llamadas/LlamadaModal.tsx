@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
+  buildConversacionUrl,
   createLlamada,
   deleteLlamada,
   searchLeadsLite,
@@ -72,6 +74,11 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
     15,
     Math.round((initialFin.getTime() - initialInicio.getTime()) / 60_000),
   );
+
+  const conversacionUrl = useMemo(() => {
+    if (!isEdit) return null;
+    return buildConversacionUrl((initial as { mode: 'edit'; llamada: LlamadaAgendada }).llamada.lead?.phone);
+  }, [isEdit, initial]);
 
   const [titulo, setTitulo] = useState<string>(
     isEdit ? initial.llamada.titulo : 'Llamada',
@@ -426,7 +433,7 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
           </div>
 
           <div className="mt-5 flex items-center justify-between gap-2">
-            <div>
+            <div className="flex items-center gap-3">
               {isEdit && (
                 <Button
                   variant="outline"
@@ -436,6 +443,15 @@ export default function LlamadaModal({ initial, onClose, onSaved }: LlamadaModal
                 >
                   {deleting ? 'Eliminando…' : 'Eliminar'}
                 </Button>
+              )}
+              {conversacionUrl && (
+                <Link
+                  href={conversacionUrl}
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={onClose}
+                >
+                  Ir a la conversación
+                </Link>
               )}
             </div>
             <div className="flex gap-2">
