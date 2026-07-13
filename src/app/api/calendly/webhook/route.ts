@@ -6,6 +6,13 @@ const CALENDLY_SIGNING_KEY = process.env.CALENDLY_WEBHOOK_SECRET;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+function formatQuestionsAndAnswers(qas: any[]): string {
+  if (!Array.isArray(qas) || qas.length === 0) return '';
+  return qas
+    .map((qa) => `- ${qa.question}: ${qa.answer ?? '(sin respuesta)'}`)
+    .join('\n');
+}
+
 function verifySignature(body: string, signatureHeader: string, secret: string): boolean {
   // Formato Calendly: "t=TIMESTAMP,v1=HASH"
   const parts: Record<string, string> = {};
@@ -76,7 +83,11 @@ export async function POST(req: NextRequest) {
     const phone: string | null = invitee.text_reminder_number ?? null;
     const email: string = invitee.email ?? '';
     const titulo: string = eventData.name || 'Llamada desde Calendly';
-    const notas = `Agendado vía Calendly${email ? `\nEmail: ${email}` : ''}`;
+    // Calendly v2 manda questions_and_answers en la raíz del payload; algunos relays lo anidan en invitee
+    const qaText = formatQuestionsAndAnswers(
+      invitee.questions_and_answers ?? payload.questions_and_answers,
+    );
+    const notas = `Agendado vía Calendly${email ? `\nEmail: ${email}` : ''}${qaText ? `\n\nRespuestas del formulario:\n${qaText}` : ''}`;
 
     const { error: insertError } = await (supabase as any)
       .from('llamadas_agendadas')

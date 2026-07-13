@@ -65,6 +65,8 @@ export default function CentroComandoLlamadasPage() {
   const [error, setError] = useState<string | null>(null);
   const [estadoFilter, setEstadoFilter] = useState<EstadoLlamada | 'todas'>('todas');
   const [dispatching, setDispatching] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
   const [leadQuery, setLeadQuery] = useState('');
   const [leadResults, setLeadResults] = useState<LeadLite[]>([]);
   const [modalInitial, setModalInitial] = useState<LlamadaModalInitial | null>(null);
@@ -161,6 +163,26 @@ export default function CentroComandoLlamadasPage() {
     }
   };
 
+  const sincronizarCalendly = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/calendly/sync', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body?.error ?? `Error ${res.status}`);
+      } else {
+        setSyncResult(`Calendly: ${body.created} nueva(s), ${body.skipped} ya existía(n)`);
+        await reload();
+      }
+    } catch (err: any) {
+      setError(err?.message ?? 'Error de red');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const openCreate = (lead: LeadLite) => {
     const now = new Date();
     setModalInitial({
@@ -193,6 +215,15 @@ export default function CentroComandoLlamadasPage() {
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-foreground">Centro de Llamadas</h1>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={syncing}
+              onClick={sincronizarCalendly}
+              className="text-xs"
+            >
+              {syncing ? 'Sincronizando…' : 'Sincronizar Calendly'}
+            </Button>
             <label htmlFor="estadoFilter" className="text-sm text-muted-foreground">
               Estado:
             </label>
@@ -209,6 +240,13 @@ export default function CentroComandoLlamadasPage() {
             </select>
           </div>
         </div>
+
+        {syncResult && (
+          <div className="mb-3 flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <span>{syncResult}</span>
+            <button type="button" onClick={() => setSyncResult(null)} className="ml-3 text-xs text-emerald-600 hover:underline">Cerrar</button>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -263,10 +301,15 @@ export default function CentroComandoLlamadasPage() {
 
                       return (
                         <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[160px]">
+                          <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[180px]">
                             <span className="block truncate" title={row.lead?.nombre ?? row.nombre_contacto ?? '—'}>
                               {row.lead?.nombre ?? row.nombre_contacto ?? '—'}
                             </span>
+                            {row.calendly_uuid && (
+                              <span className="mt-0.5 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-600/20">
+                                Calendly
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap tabular-nums">
                             {row.lead?.phone ?? '—'}

@@ -23,6 +23,7 @@ export interface Lead {
   phone?: string; // Campo phone de la tabla leads (PRIORITARIO)
   phone_from?: string; // Campo phone_from de la tabla leads
   servicio?: 'carnet' | 's&h' | null; // Servicio inferido por el classifier LLM (null = sin clasificar)
+  source?: 'meta' | 'google' | null; // Origen calculado por n8n (referral CTWA => meta, si no google; null = histórico sin captura)
   nombre?: string;
   zona?: string;
   tipo_propiedad?: string;

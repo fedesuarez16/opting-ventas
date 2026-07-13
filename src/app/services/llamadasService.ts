@@ -30,6 +30,7 @@ export interface LlamadaAgendada {
   twilio_call_sid: string | null;
   estado_twilio: string | null;
   grabacion_url: string | null;
+  calendly_uuid: string | null;
   created_at: string;
   updated_at: string;
   lead?: {
@@ -54,7 +55,7 @@ export interface LlamadaInput {
 
 const SELECT_WITH_LEAD = `
   id, lead_id, nombre_contacto, titulo, notas, inicio, fin, estado, resultado, agente,
-  agente_telefono, twilio_call_sid, estado_twilio, grabacion_url,
+  agente_telefono, twilio_call_sid, estado_twilio, grabacion_url, calendly_uuid,
   created_at, updated_at,
   lead:leads ( id, nombre, phone )
 `;

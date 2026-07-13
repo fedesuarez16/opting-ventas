@@ -13,6 +13,8 @@ import { ChartConfig } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from 'next/link';
+import { computeSourceCounts } from "@/lib/sourceChart";
+import type { CarnetsResumen } from "@/lib/carnetsLog";
 
 // ===== Colores y constantes globales del dashboard =====
 const ESTADO_COLORS: Record<string, string> = {
@@ -126,6 +128,8 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(true);
   const [llamadas, setLlamadasData] = useState<LlamadaAgendada[]>([]);
   const [isLoadingLlamadas, setIsLoadingLlamadas] = useState(true);
+  const [carnets, setCarnets] = useState<CarnetsResumen>({ totalAprobados: 0, montoTotal: 0, sinFecha: 0, porDia: [] });
+  const [isLoadingCarnets, setIsLoadingCarnets] = useState(true);
   const [preset, setPreset] = useState<Preset>('30d');
   const [dateFrom, setDateFrom] = useState<Date>(() => {
     const d = new Date(); d.setDate(d.getDate() - 29); d.setHours(0, 0, 0, 0); return d;
@@ -160,6 +164,7 @@ export default function Page() {
 
     setIsLoading(true);
     setIsLoadingLlamadas(true);
+    setIsLoadingCarnets(true);
 
     Promise.allSettled([
       getAllLeads()
@@ -168,6 +173,10 @@ export default function Page() {
       getLlamadasInRange(past90, future7)
         .then((d) => { setLlamadasData(d); setIsLoadingLlamadas(false); })
         .catch((e) => { console.error('[dashboard] llamadas error:', e); setIsLoadingLlamadas(false); }),
+      fetch('/api/carnets')
+        .then((r) => r.json())
+        .then((d: CarnetsResumen) => { setCarnets(d); setIsLoadingCarnets(false); })
+        .catch((e) => { console.error('[dashboard] carnets error:', e); setIsLoadingCarnets(false); }),
     ]);
   }, []);
 
@@ -327,6 +336,25 @@ export default function Page() {
     [llamadas, dateFrom, dateTo]
   );
 
+  // ===== Carnets vendidos (log de optingsha.com.ar vía /api/carnets) =====
+  // Se filtra por rango comparando strings YYYY-MM-DD para evitar corrimiento de zona horaria.
+  const carnetsEnElPeriodo = useMemo(() => {
+    const fromStr = toInputValue(dateFrom);
+    const toStr = toInputValue(dateTo);
+    const dias = carnets.porDia.filter(d => d.fecha >= fromStr && d.fecha <= toStr);
+    return {
+      cantidad: dias.reduce((s, d) => s + d.cantidad, 0),
+      monto: dias.reduce((s, d) => s + d.monto, 0),
+    };
+  }, [carnets, dateFrom, dateTo]);
+
+  const carnetsPorDiaData = useMemo(() => {
+    const lookup = new Map(carnets.porDia.map(d => [d.fecha, d.cantidad]));
+    return eachDayInRange(dateFrom, dateTo).map(date => ({ date, value: lookup.get(date) ?? 0 }));
+  }, [carnets, dateFrom, dateTo]);
+
+  const carnetsChartConfig: ChartConfig = { value: { label: 'Carnets', color: '#16A34A' } };
+
   // ===== Grupo 1: Pipeline & Conversión =====
 
   // T5 — funnelData (R1): funnel de estados
@@ -377,16 +405,15 @@ export default function Page() {
     estadoDistData.map(d => [d.name, { label: d.name, color: d.fill }])
   );
 
-  // T7 — kpiConversionLlamadas (R3): tasa de conversión
-  const kpiConversionLlamadas = useMemo(() => {
-    const relevant = filterLlamadasByDate(llamadas, dateFrom, dateTo);
-    const realizadas = relevant.filter(l => l.estado === 'realizada').length;
-    const agendadas = relevant.filter(l => l.estado === 'agendada').length;
-    const den = realizadas + agendadas;
-    const ratio = den > 0 ? Math.round((realizadas / den) * 1000) / 10 : null;
-    const leadsMarcados = leads.filter(l => l.llamada_agendada === true).length;
-    return { ratio, realizadas, agendadas, den, leadsMarcados };
-  }, [llamadas, leads, dateFrom, dateTo]);
+  // T7 — kpiConversion (R3): tasa de conversión = carnets vendidos / leads que entraron (período)
+  const kpiConversion = useMemo(() => {
+    const leadsPeriodo = leadsEnElPeriodo;
+    const carnetsPeriodo = carnetsEnElPeriodo.cantidad;
+    const ratio = leadsPeriodo > 0
+      ? Math.round((carnetsPeriodo / leadsPeriodo) * 1000) / 10
+      : null;
+    return { ratio, leadsPeriodo, carnetsPeriodo };
+  }, [leadsEnElPeriodo, carnetsEnElPeriodo]);
 
   // ===== Grupo 2: Calidad y Origen =====
 
@@ -425,6 +452,16 @@ export default function Page() {
 
   const origenConfig: ChartConfig = Object.fromEntries(
     origenData.map(d => [d.name, { label: d.name, color: d.fill }])
+  );
+
+  // T9b — sourceData (R5): Source del lead (Meta vs Google), calculado por n8n
+  const sourceData = useMemo(
+    () => computeSourceCounts(filterLeadsByDate(leads, dateFrom, dateTo)),
+    [leads, dateFrom, dateTo]
+  );
+
+  const sourceConfig: ChartConfig = Object.fromEntries(
+    sourceData.map(d => [d.name, { label: d.name, color: d.fill }])
   );
 
   // origenByDate: leads por tipo de origen en el período seleccionado
@@ -841,7 +878,7 @@ export default function Page() {
         </div>
 
         {/* Cards de métricas */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center  justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -922,6 +959,44 @@ export default function Page() {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Carnets vendidos
+              </CardTitle>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                className="h-4 w-4 text-muted-foreground"
+              >
+                <rect width="18" height="14" x="3" y="5" rx="2" />
+                <circle cx="8" cy="12" r="2" />
+                <path d="M14 10h4M14 14h2" />
+              </svg>
+            </CardHeader>
+            <CardContent>
+              {isLoadingCarnets ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{carnetsEnElPeriodo.cantidad}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Recaudado ${carnetsEnElPeriodo.monto.toLocaleString('es-AR')} en el período
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Histórico: {carnets.totalAprobados} carnets
+                    {carnets.sinFecha > 0 && ` · ${carnets.sinFecha} sin fecha`}
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Gráfico de leads por período */}
@@ -939,6 +1014,23 @@ export default function Page() {
               dateKey="date"
               valueKey="leads"
             />
+          </CardContent>
+        </Card>
+
+        {/* Gráfico: Carnets vendidos por día */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Carnets Vendidos</CardTitle>
+            <CardDescription>
+              Carnets aprobados por día en el período seleccionado (fecha aproximada según el webhook de pago)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingCarnets
+              ? <Skeleton className="h-[300px] w-full" />
+              : carnetsPorDiaData.every(d => d.value === 0)
+                ? <EmptyChart message="Sin carnets vendidos en el período seleccionado" />
+                : <ChartAreaInteractive data={carnetsPorDiaData} config={carnetsChartConfig} dateKey="date" valueKey="value" />}
           </CardContent>
         </Card>
 
@@ -1026,21 +1118,18 @@ export default function Page() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-medium">Tasa de Conversión</CardTitle>
-                <CardDescription>Llamadas realizadas vs. total (período seleccionado)</CardDescription>
+                <CardDescription>Carnets vendidos vs. leads que entraron (período seleccionado)</CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingLlamadas ? (
+                {isLoadingCarnets ? (
                   <Skeleton className="h-[120px] w-full" />
-                ) : kpiConversionLlamadas.den === 0 ? (
-                  <div className="py-6 text-sm text-slate-500">Sin llamadas en el período</div>
+                ) : kpiConversion.ratio === null ? (
+                  <div className="py-6 text-sm text-slate-500">Sin leads en el período</div>
                 ) : (
                   <>
-                    <div className="text-3xl font-bold text-slate-800">{kpiConversionLlamadas.ratio}%</div>
+                    <div className="text-3xl font-bold text-slate-800">{kpiConversion.ratio}%</div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {kpiConversionLlamadas.realizadas} realizadas / {kpiConversionLlamadas.den} totales (período)
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {kpiConversionLlamadas.leadsMarcados} leads marcados para llamar
+                      {kpiConversion.carnetsPeriodo} carnets / {kpiConversion.leadsPeriodo} leads (período)
                     </p>
                   </>
                 )}
@@ -1102,6 +1191,19 @@ export default function Page() {
                 {origenData.length === 0
                   ? <EmptyChart />
                   : <ChartPie data={origenData} config={origenConfig} showLegend />}
+              </CardContent>
+            </Card>
+
+            {/* Source del Lead donut (Meta vs Google) */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Source del Lead</CardTitle>
+                <CardDescription>Meta (CTWA) vs Google</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {sourceData.length === 0
+                  ? <EmptyChart />
+                  : <ChartPie data={sourceData} config={sourceConfig} showLegend />}
               </CardContent>
             </Card>
 

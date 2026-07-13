@@ -5,6 +5,13 @@ const CALENDLY_API_TOKEN = process.env.CALENDLY_API_TOKEN;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+function formatQuestionsAndAnswers(qas: any[]): string {
+  if (!Array.isArray(qas) || qas.length === 0) return '';
+  return qas
+    .map((qa) => `- ${qa.question}: ${qa.answer ?? '(sin respuesta)'}`)
+    .join('\n');
+}
+
 async function calendlyGet(path: string) {
   const res = await fetch(`https://api.calendly.com${path}`, {
     headers: { Authorization: `Bearer ${CALENDLY_API_TOKEN}` },
@@ -78,7 +85,8 @@ export async function POST() {
       }
 
       const email: string = invitee.email ?? '';
-      const notas = `Agendado vía Calendly${email ? `\nEmail: ${email}` : ''}`;
+      const qaText = formatQuestionsAndAnswers(invitee.questions_and_answers);
+      const notas = `Agendado vía Calendly${email ? `\nEmail: ${email}` : ''}${qaText ? `\n\nRespuestas del formulario:\n${qaText}` : ''}`;
 
       const { error } = await (supabase as any)
         .from('llamadas_agendadas')

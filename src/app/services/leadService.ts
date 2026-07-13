@@ -248,6 +248,7 @@ const mapLeadRow = (row: any): Lead => {
     phone: (row as any).phone ?? undefined, // Campo phone de la tabla leads (PRIORITARIO)
     phone_from: (row as any).phone_from ?? undefined, // Campo phone_from de la tabla leads
     servicio: (row as any).servicio ?? null, // Servicio del classifier LLM (passthrough)
+    source: (row as any).source ?? null, // Origen calculado por n8n (passthrough)
     nombre: row.nombre ?? undefined,
     zona: row.zona ?? undefined,
     tipo_propiedad: row.tipo_propiedad ?? undefined,
