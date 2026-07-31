@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { getTemplateByKey } from '@/lib/whatsapp-templates';
 import { isAllowedPhoneFrom } from '@/lib/whatsapp-lines';
+import { sendTemplate } from '@/lib/ycloudSender';
 
-const N8N_WEBHOOK_URL = 'https://mia-n8n.w9weud.easypanel.host/webhook/bulk-send';
+/** Pausa entre mensajes para no golpear el rate limit de YCloud. */
+const DELAY_ENTRE_ENVIOS_MS = 300;
 
 export interface BulkSendCounts {
   estado_bloqueado: number;
@@ -10,6 +12,8 @@ export interface BulkSendCounts {
   phone_from_null: number;
   phone_from_invalido: number;
   duplicado: number;
+  /** La plantilla vive en otra WABA que la línea del lead: YCloud la rechazaría. */
+  linea_incompatible: number;
 }
 
 export interface BulkSendResult {
@@ -18,14 +22,20 @@ export interface BulkSendResult {
   total_efectivo: number;
   total_excluido: number;
   excluded_by_reason: BulkSendCounts;
+  /** Mensajes que Meta aceptó. */
+  total_enviado: number;
+  /** Mensajes que Meta rechazó, con el motivo del primero. */
+  total_fallado: number;
+  primer_error?: string;
   warning?: string;
 }
 
 export type BulkSendError = { error: string; status: number };
 
 /**
- * Crea un batch en envios_masivos_batch, encola en cola_envio_masivo y dispara el
- * webhook de n8n que efectivamente manda los mensajes de WhatsApp (HSM aprobado por Meta).
+ * Crea un batch en envios_masivos_batch, encola en cola_envio_masivo y manda los mensajes
+ * de WhatsApp (HSM aprobado por Meta) contra la Cloud API, sin pasar por n8n.
+ *
  * Compartido entre /api/leads/bulk-send y /api/previo-pago/cargar para que las reglas de
  * exclusión (estado bloqueado, deriva a humano, línea inválida, duplicados) no diverjan.
  */
@@ -61,6 +71,7 @@ export async function queueLeadsForSend(
     phone_from_null: 0,
     phone_from_invalido: 0,
     duplicado: 0,
+    linea_incompatible: 0,
   };
 
   const efectivos: Array<{ id: number; phone: string | null; phone_from: string | null }> = [];
@@ -93,6 +104,13 @@ export async function queueLeadsForSend(
     if (!isAllowedPhoneFrom(lead.phone_from)) {
       counts.phone_from_invalido++;
       excluidos.push({ lead_id: lead.id, phone: lead.phone, phone_from: lead.phone_from, exclusion_reason: 'phone_from_invalido' });
+      continue;
+    }
+    // La plantilla vive en la WABA de una línea concreta: mandarla desde la otra da 403.
+    // Se excluye acá en vez de dejar que YCloud lo rechace mensaje por mensaje.
+    if (template.phoneFrom && lead.phone_from !== template.phoneFrom) {
+      counts.linea_incompatible++;
+      excluidos.push({ lead_id: lead.id, phone: lead.phone, phone_from: lead.phone_from, exclusion_reason: 'linea_incompatible' });
       continue;
     }
     if (lead.phone && seenPhones.has(lead.phone)) {
@@ -149,7 +167,10 @@ export async function queueLeadsForSend(
     })),
   ];
 
-  const { error: colaError } = await (supabase as any).from('cola_envio_masivo').insert(colaRows);
+  const { data: colaInsertada, error: colaError } = await (supabase as any)
+    .from('cola_envio_masivo')
+    .insert(colaRows)
+    .select('id, lead_id, phone, status');
 
   if (colaError) {
     console.error('[bulkSendQueue] Error insertando cola, revirtiendo batch:', colaError);
@@ -157,28 +178,58 @@ export async function queueLeadsForSend(
     return { error: 'Error interno', status: 500 };
   }
 
-  let warning: string | undefined;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const webhookRes = await fetch(N8N_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ batch_id: batchId }),
-      signal: controller.signal,
+  // Envío real contra la Cloud API, fila por fila: cada mensaje actualiza su propia fila
+  // para que un fallo puntual no arrastre al resto del batch.
+  const pendientes = ((colaInsertada ?? []) as any[]).filter((r) => r.status === 'pendiente');
+  const phoneFromPorFila = new Map<number, string | null>();
+  for (const lead of efectivos) phoneFromPorFila.set(lead.id, lead.phone_from);
+
+  let totalEnviado = 0;
+  let totalFallado = 0;
+  let primerError: string | undefined;
+
+  for (let i = 0; i < pendientes.length; i++) {
+    const fila = pendientes[i];
+    const envio = await sendTemplate({
+      from: template.phoneFrom ?? phoneFromPorFila.get(fila.lead_id) ?? null,
+      phone: fila.phone,
+      templateName: template.hsmName,
+      language: template.language,
     });
-    clearTimeout(timeoutId);
-    if (!webhookRes.ok) {
-      warning = 'Cola creada pero webhook no respondió, revisar n8n';
-      console.error(`[bulkSendQueue] Webhook n8n status=${webhookRes.status}`);
+
+    if (envio.ok) {
+      totalEnviado++;
+      await (supabase as any)
+        .from('cola_envio_masivo')
+        .update({ status: 'enviado', sent_at: new Date().toISOString(), ycloud_message_id: envio.messageId })
+        .eq('id', fila.id);
+    } else {
+      totalFallado++;
+      if (!primerError) primerError = envio.error;
+      console.error(`[bulkSendQueue] fallo lead_id=${fila.lead_id}: ${envio.error}`);
+      await (supabase as any)
+        .from('cola_envio_masivo')
+        .update({ status: 'fallado', error_message: envio.error })
+        .eq('id', fila.id);
     }
-  } catch (err) {
-    warning = 'Cola creada pero webhook no respondió, revisar n8n';
-    console.error('[bulkSendQueue] Webhook n8n error:', err);
+
+    if (i < pendientes.length - 1) {
+      await new Promise((r) => setTimeout(r, DELAY_ENTRE_ENVIOS_MS));
+    }
   }
 
+  await (supabase as any)
+    .from('envios_masivos_batch')
+    .update({ status: totalFallado === 0 ? 'completado' : 'completado_con_errores' })
+    .eq('id', batchId);
+
+  const warning =
+    totalFallado > 0 ? `${totalFallado} de ${pendientes.length} fallaron: ${primerError}` : undefined;
+
   console.log(
-    `[bulkSendQueue] batch_id=${batchId} total=${leadIds.length} efectivo=${efectivos.length} excluido=${excluidos.length}${warning ? ` warning=${warning}` : ''}`
+    `[bulkSendQueue] batch_id=${batchId} total=${leadIds.length} efectivo=${efectivos.length} ` +
+      `excluido=${excluidos.length} enviado=${totalEnviado} fallado=${totalFallado}` +
+      `${primerError ? ` primer_error=${primerError}` : ''}`
   );
 
   return {
@@ -187,6 +238,9 @@ export async function queueLeadsForSend(
     total_efectivo: efectivos.length,
     total_excluido: excluidos.length,
     excluded_by_reason: counts,
+    total_enviado: totalEnviado,
+    total_fallado: totalFallado,
+    ...(primerError ? { primer_error: primerError } : {}),
     ...(warning ? { warning } : {}),
   };
 }

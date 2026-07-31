@@ -5,6 +5,14 @@ export interface WhatsappTemplate {
   language: string;
   description: string;
   body?: string;
+  /**
+   * Línea desde la que se puede enviar esta plantilla. Cada línea vive en una WABA
+   * distinta y una plantilla solo existe dentro de SU WABA: mandarla desde la otra da
+   * 403 WHATSAPP_TEMPLATE_UNAVAILABLE. `undefined` = todavía sin verificar contra YCloud.
+   *   +5491141872290 (Carnet) → WABA 1140283618163985
+   *   +5491123312054 (S&H)    → WABA 1975639926629842
+   */
+  phoneFrom?: string;
 }
 
 export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
@@ -13,22 +21,25 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
     displayName: 'Marketing — Carnet (aprobada)',
     hsmName: 'template_marketing_20260509044108',
     language: 'es_AR',
-    description: 'Plantilla de marketing aprobada para WABA Carnet (+5491141872290) el 2026-05-09. Idioma es_AR.',
+    phoneFrom: '+5491141872290',
+    description: 'Marketing aprobada el 2026-05-09. Verificada en YCloud: WABA 1140283618163985 (Carnet).',
   },
   {
     key: 'marketing_sh',
     displayName: 'Marketing — S&H (aprobada)',
     hsmName: 'template_marketing_20260401041159',
     language: 'es_AR',
-    description: 'Plantilla de marketing aprobada para WABA S&H (+5491123312054) el 2026-04-01. Idioma es_AR.',
+    phoneFrom: '+5491123312054',
+    description: 'Marketing aprobada el 2026-04-01. Verificada en YCloud: WABA 1975639926629842 (S&H).',
   },
   {
     key: 'previo_pago_seguimiento',
     displayName: 'Previo Pago — Seguimiento mismo día (aprobada)',
     hsmName: 'template_utility_20260730160029',
     language: 'es_AR',
+    phoneFrom: '+5491123312054',
     description:
-      'Utility aprobada el 2026-07-30 para WABA Carnet (+5491141872290). La manda el cron de las 15hs AR a los leads previo_pago que entraron ese mismo día.',
+      'Utility aprobada el 2026-07-30. Verificada en YCloud: vive en la WABA 1975639926629842 (S&H), NO en la de Carnet, así que se manda por +5491123312054. La usa el cron de las 15hs AR.',
   },
   {
     key: 'carnet_recordatorio_v1',

@@ -176,15 +176,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  // Los excluidos (estado bloqueado, deriva a humano, línea inválida, duplicado) no
-  // recibieron nada: desmarcarlos para que puedan entrar en una corrida futura.
+  // Los que no recibieron el mensaje —excluidos por las reglas del motor, o rechazados
+  // por Meta— tienen que volver a NULL: si quedan marcados, figuran como contactados sin
+  // haber recibido nada y no entran nunca más.
   let desmarcados = 0;
-  if (result.total_excluido > 0) {
+  if (result.total_excluido > 0 || result.total_fallado > 0) {
     const { data: excluidos, error: excluidosError } = await (supabase as any)
       .from('cola_envio_masivo')
       .select('lead_id')
       .eq('batch_id', result.batch_id)
-      .eq('status', 'excluido');
+      .in('status', ['excluido', 'fallado']);
 
     if (excluidosError) {
       console.error('[previo-pago/seguimiento-cron] error leyendo excluidos', excluidosError);
@@ -222,7 +223,7 @@ export async function GET(req: NextRequest) {
     ventana: { desde, hasta },
     ingestados,
     candidatos: ids.length,
-    enviados: result.total_efectivo,
+    enviados: result.total_enviado,
     desmarcados,
     ...result,
     ...(warnings.length ? { warning: warnings.join(' | ') } : {}),

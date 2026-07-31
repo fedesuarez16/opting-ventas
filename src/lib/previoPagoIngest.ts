@@ -6,8 +6,15 @@ import {
   type PrevioPagoResumen,
 } from './previoPagoLog';
 
-/** WABA de Carnet de Manipulación — confirmado por el usuario para esta campaña. */
-export const CARNET_PHONE_FROM = '+5491141872290';
+/**
+ * Línea desde la que sale la campaña de previo pago.
+ *
+ * Es la de S&H y NO la de Carnet, aunque el mensaje hable del curso de manipulación de
+ * alimentos: la plantilla `template_utility_20260730160029` está aprobada en la WABA
+ * 1975639926629842, que es la de +5491123312054. Mandarla desde Carnet devuelve
+ * 403 WHATSAPP_TEMPLATE_UNAVAILABLE. Verificado contra la API de YCloud el 2026-07-31.
+ */
+export const PREVIO_PAGO_PHONE_FROM = '+5491123312054';
 
 export const PREVIO_PAGO_LOG_URL =
   process.env.PREVIO_PAGO_LOG_URL || 'https://optingsha.com.ar/estado.log';
@@ -108,7 +115,7 @@ export async function ingestarLeadsPrevioPago(
       nombre: i.nombre || null,
       estado: 'frio',
       chat_activo: 0,
-      phone_from: CARNET_PHONE_FROM,
+      phone_from: PREVIO_PAGO_PHONE_FROM,
       etiqueta: ETIQUETA_PREVIO_PAGO,
       mensaje_inicial: `Previo pago sin completar (${(i.estados || []).join(', ') || 'previopago'}) — optingsha.com.ar/estado.log`,
       timestamp_mensaje: new Date().toISOString(),
