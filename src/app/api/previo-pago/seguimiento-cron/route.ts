@@ -26,12 +26,17 @@ function getSupabase() {
 }
 
 /**
- * Cron de seguimiento de previo pago. Se dispara una vez por día a las 15hs AR.
+ * Cron de seguimiento de previo pago. Corre DOS veces por día: 15hs y 21hs AR.
  *
- * Lo agenda Vercel Cron (`vercel.json`, `0 18 * * *` — los schedules de Vercel son en
- * UTC y Argentina es UTC-3). Vercel agrega solo el header `Authorization: Bearer
- * $CRON_SECRET` tomándolo de las env vars del proyecto, así que `CRON_SECRET` tiene que
- * estar definida en Vercel o este endpoint responde 401.
+ * Lo agenda Vercel Cron (`vercel.json`: `0 18 * * *` y `0 0 * * *` — los schedules de
+ * Vercel son en UTC y Argentina es UTC-3, así que 21hs AR cae a las 00:00 UTC del día
+ * siguiente). Vercel agrega solo el header `Authorization: Bearer $CRON_SECRET` tomándolo
+ * de las env vars del proyecto, así que `CRON_SECRET` tiene que estar definida en Vercel
+ * o este endpoint responde 401.
+ *
+ * No hace falta una ventana "de 15 a 21": la corrida de las 21hs busca por día AR y por
+ * `seguimiento_previo_pago_enviado IS NULL`, así que sólo agarra a los que entraron
+ * después de la corrida anterior. Los ya contactados quedan afuera por la marca.
  *
  * Corre en dos fases:
  *   1. Ingesta — baja el log, se queda con los que iniciaron el pago HOY (día calendario

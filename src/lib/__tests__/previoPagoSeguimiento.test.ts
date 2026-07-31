@@ -44,6 +44,15 @@ describe('ventanaDiaArgentina', () => {
     expect(medianocheSiguiente < new Date(hasta)).toBe(false);
   });
 
+  it('en la corrida de las 21hs AR (00:00 UTC exacto) sigue apuntando al día que termina', () => {
+    // 2026-07-31 21:00 AR === 2026-08-01 00:00 UTC. El día AR es todavía el 31.
+    const now = new Date('2026-08-01T00:00:00.000Z');
+    expect(ventanaDiaArgentina(now)).toEqual({
+      desde: '2026-07-31T03:00:00.000Z',
+      hasta: '2026-08-01T03:00:00.000Z',
+    });
+  });
+
   it('cruza fin de mes sin romperse', () => {
     // 2026-09-01 10:00 AR === 2026-09-01 13:00 UTC
     const now = new Date('2026-09-01T13:00:00.000Z');

@@ -34,12 +34,12 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
   },
   {
     key: 'previo_pago_seguimiento',
-    displayName: 'Previo Pago — Seguimiento mismo día (aprobada)',
-    hsmName: 'template_utility_20260730160029',
+    displayName: 'Previo Pago — Seguimiento mismo día',
+    hsmName: 'template_utility_20260731160820',
     language: 'es_AR',
-    phoneFrom: '+5491123312054',
+    phoneFrom: '+5491141872290',
     description:
-      'Utility aprobada el 2026-07-30. Verificada en YCloud: vive en la WABA 1975639926629842 (S&H), NO en la de Carnet, así que se manda por +5491123312054. La usa el cron de las 15hs AR.',
+      'Utility del curso de manipulación de alimentos, dada de alta el 2026-07-31 en la WABA 1140283618163985 (Carnet) para poder enviarla por +5491141872290. La usa el cron de las 15hs AR.',
   },
   {
     key: 'carnet_recordatorio_v1',
