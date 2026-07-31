@@ -23,6 +23,14 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
     description: 'Plantilla de marketing aprobada para WABA S&H (+5491123312054) el 2026-04-01. Idioma es_AR.',
   },
   {
+    key: 'previo_pago_seguimiento',
+    displayName: 'Previo Pago — Seguimiento mismo día (aprobada)',
+    hsmName: 'template_utility_20260730160029',
+    language: 'es_AR',
+    description:
+      'Utility aprobada el 2026-07-30 para WABA Carnet (+5491141872290). La manda el cron de las 15hs AR a los leads previo_pago que entraron ese mismo día.',
+  },
+  {
     key: 'carnet_recordatorio_v1',
     displayName: 'Recordatorio Carnet (placeholder)',
     hsmName: 'TODO_hsm_carnet_recordatorio',

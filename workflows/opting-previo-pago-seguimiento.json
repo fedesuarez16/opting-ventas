@@ -1,0 +1,93 @@
+{
+  "name": "Opting - Previo Pago Seguimiento 15hs",
+  "description": "Todos los días a las 15hs AR llama al endpoint del CRM que manda la plantilla template_utility_20260730160029 a los leads previo_pago que entraron ese mismo día. Ver sticky note antes de activar.",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-15",
+      "name": "Cron 15:00 AR",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://REEMPLAZAR-URL-DEL-CRM/api/previo-pago/seguimiento-cron",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer REEMPLAZAR-CRON-SECRET"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "http-cron",
+      "name": "GET seguimiento-cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst body = r.body ?? r;\nconsole.log(`[PrevioPago 15hs] status=${r.statusCode ?? '?'} candidatos=${body.candidatos ?? 0} enviados=${body.enviados ?? 0} excluidos=${body.total_excluido ?? 0} batch=${body.batch_id ?? '-'}${body.warning ? ' warning=' + body.warning : ''}${body.error ? ' ERROR=' + body.error : ''}`);\nreturn $input.all();"
+      },
+      "id": "log-resultado",
+      "name": "Log Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "content": "## Previo Pago — seguimiento del mismo día\n\n**Qué hace:** 15:00 AR → GET `/api/previo-pago/seguimiento-cron` en el CRM.\n\nEl endpoint hace TODO el trabajo, en dos fases:\n\n**1. Ingesta** — baja `optingsha.com.ar/estado.log`, se queda con los que iniciaron el pago HOY (día AR) y nunca llegaron a `approved`, y crea como lead a los que todavía no existen (etiqueta `previo_pago`, línea Carnet). No toca leads que ya existían.\n\n**2. Envío** — busca los leads `previo_pago` creados hoy con `seguimiento_previo_pago_enviado IS NULL`, los marca de forma atómica y encola `template_utility_20260730160029`.\n\n**Antes de activar:**\n1. Correr `SUPABASE_PREVIO_PAGO_SEGUIMIENTO.sql` en Supabase (crea la columna `seguimiento_previo_pago_enviado`).\n2. Reemplazar la URL del CRM y el `CRON_SECRET` en el nodo HTTP.\n3. Probar una corrida antes de dejarlo activo: dispara WhatsApps REALES.\n\n**Seguridad:** el marcado es previo al envío y atómico (`IS NULL` en el WHERE). Si el cron se dispara dos veces, la segunda corrida no reclama nada y nadie recibe el mensaje duplicado. Los leads excluidos por el motor de envío se desmarcan para poder reintentarlos.",
+        "height": 460,
+        "width": 420
+      },
+      "id": "sticky-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-460, -120]
+    }
+  ],
+  "connections": {
+    "Cron 15:00 AR": {
+      "main": [[{ "node": "GET seguimiento-cron", "type": "main", "index": 0 }]]
+    },
+    "GET seguimiento-cron": {
+      "main": [[{ "node": "Log Resultado", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "tags": []
+}

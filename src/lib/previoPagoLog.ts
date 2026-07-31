@@ -9,6 +9,9 @@
  * últimos 10 dígitos, mismo criterio que usa el resto del CRM para matchear números.
  */
 
+/** Etiqueta que marca en `leads` a los contactos ya cargados desde el log de previo pago. */
+export const ETIQUETA_PREVIO_PAGO = 'previo_pago';
+
 export interface PrevioPagoEvento {
   fecha: string;
   nombre: string;

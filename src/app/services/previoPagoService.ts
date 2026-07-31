@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { PrevioPagoResumen } from '@/lib/previoPagoLog';
+import { ETIQUETA_PREVIO_PAGO, type PrevioPagoResumen } from '@/lib/previoPagoLog';
 import type { BulkSendResult } from '@/lib/bulkSendQueue';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string | undefined;
@@ -17,7 +17,7 @@ const getSupabase = () => {
 
 export type { PrevioPagoResumen, PrevioPagoContacto } from '@/lib/previoPagoLog';
 
-export const ETIQUETA_PREVIO_PAGO = 'previo_pago';
+export { ETIQUETA_PREVIO_PAGO };
 
 export const getPrevioPagoResumen = async (): Promise<PrevioPagoResumen> => {
   const res = await fetch('/api/previo-pago', { cache: 'no-store' });
