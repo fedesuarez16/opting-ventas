@@ -14,6 +14,8 @@ export interface BulkSendCounts {
   duplicado: number;
   /** La plantilla vive en otra WABA que la línea del lead: YCloud la rechazaría. */
   linea_incompatible: number;
+  /** Este lead ya recibió esta misma plantilla en una corrida anterior. */
+  ya_enviado: number;
 }
 
 export interface BulkSendResult {
@@ -65,6 +67,23 @@ export async function queueLeadsForSend(
     return { error: 'Error interno', status: 500 };
   }
 
+  // Idempotencia: si este lead ya recibió ESTA plantilla antes (otra corrida del cron, un
+  // doble click, una carga manual repetida), no se manda de nuevo. Sin esto, cualquier
+  // solapamiento entre el cron y la carga manual —o un simple doble click— reenvía la
+  // plantilla a gente que ya la recibió, incluso a quien ya contestó "no me interesa".
+  const { data: yaEnviadosData, error: yaEnviadosError } = await (supabase as any)
+    .from('cola_envio_masivo')
+    .select('lead_id')
+    .eq('template_key', templateKey)
+    .eq('status', 'enviado')
+    .in('lead_id', leadIds);
+
+  if (yaEnviadosError) {
+    console.error('[bulkSendQueue] Error chequeando envíos previos:', yaEnviadosError);
+    return { error: 'Error interno', status: 500 };
+  }
+  const yaEnviados = new Set<number>((yaEnviadosData ?? []).map((r: any) => r.lead_id));
+
   const counts: BulkSendCounts = {
     estado_bloqueado: 0,
     deriva_humano: 0,
@@ -72,6 +91,7 @@ export async function queueLeadsForSend(
     phone_from_invalido: 0,
     duplicado: 0,
     linea_incompatible: 0,
+    ya_enviado: 0,
   };
 
   const efectivos: Array<{ id: number; phone: string | null; phone_from: string | null }> = [];
@@ -86,6 +106,11 @@ export async function queueLeadsForSend(
   const sorted = [...(leadsData ?? [])].sort((a: any, b: any) => a.id - b.id);
 
   for (const lead of sorted as any[]) {
+    if (yaEnviados.has(lead.id)) {
+      counts.ya_enviado++;
+      excluidos.push({ lead_id: lead.id, phone: lead.phone, phone_from: lead.phone_from, exclusion_reason: 'ya_enviado' });
+      continue;
+    }
     if (lead.estado === 'llamada') {
       counts.estado_bloqueado++;
       excluidos.push({ lead_id: lead.id, phone: lead.phone, phone_from: lead.phone_from, exclusion_reason: 'estado_bloqueado' });
@@ -199,10 +224,16 @@ export async function queueLeadsForSend(
 
     if (envio.ok) {
       totalEnviado++;
+      const sentAt = new Date().toISOString();
       await (supabase as any)
         .from('cola_envio_masivo')
-        .update({ status: 'enviado', sent_at: new Date().toISOString(), ycloud_message_id: envio.messageId })
+        .update({ status: 'enviado', sent_at: sentAt, ycloud_message_id: envio.messageId })
         .eq('id', fila.id);
+      await registrarEnvioEnChatHistories(supabase, {
+        phone: fila.phone,
+        contenido: template.body || `[Plantilla enviada: ${template.displayName}]`,
+        fecha: sentAt,
+      });
     } else {
       totalFallado++;
       if (!primerError) primerError = envio.error;
@@ -220,7 +251,12 @@ export async function queueLeadsForSend(
 
   await (supabase as any)
     .from('envios_masivos_batch')
-    .update({ status: totalFallado === 0 ? 'completado' : 'completado_con_errores' })
+    .update({
+      status: totalFallado === 0 ? 'completado' : 'completado_con_errores',
+      total_enviado: totalEnviado,
+      total_fallado: totalFallado,
+      completed_at: new Date().toISOString(),
+    })
     .eq('id', batchId);
 
   const warning =
@@ -243,4 +279,39 @@ export async function queueLeadsForSend(
     ...(primerError ? { primer_error: primerError } : {}),
     ...(warning ? { warning } : {}),
   };
+}
+
+/**
+ * `/chat` no lee de Chatwoot (a pesar de lo que dice CLAUDE.md) — lee de `chat_histories`,
+ * la misma tabla que llena el workflow de n8n con cada turno de conversación. Un envío que
+ * pega directo a la API de YCloud nunca pasa por ahí, así que aunque el mensaje se mande de
+ * verdad, la conversación no aparece en el CRM. Esto replica el shape que ya entiende
+ * `/api/chats/[id]/messages` (`message_type`/`direction`) para que la fila se vea igual que
+ * una respuesta manual desde el chat.
+ *
+ * No falla el envío si esto falla: el mensaje YA salió por WhatsApp: perder la fila de
+ * historial es peor que no bloquear al usuario por un error de logging.
+ */
+async function registrarEnvioEnChatHistories(
+  supabase: ReturnType<typeof createClient>,
+  { phone, contenido, fecha }: { phone: string | null; contenido: string; fecha: string }
+): Promise<void> {
+  if (!phone) return;
+  try {
+    await (supabase as any).from('chat_histories').insert({
+      session_id: phone,
+      message: {
+        content: contenido,
+        text: contenido,
+        message_type: 1,
+        direction: 'outbound',
+        phone_number: phone,
+        from: phone,
+        status: 'sent',
+        created_at: fecha,
+      },
+    });
+  } catch (error) {
+    console.error('[bulkSendQueue] no se pudo registrar en chat_histories:', error);
+  }
 }
