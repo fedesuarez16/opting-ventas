@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { buildChatHistoryMessage } from '@/lib/chatHistory';
 
 const getSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -205,17 +206,14 @@ export async function POST(request, { params }) {
                        existingMessages?.message?.from || 
                        sessionId;
 
-    // Crear el mensaje en formato JSONB
-    const messageData = {
-      content: content.trim(),
-      text: content.trim(),
-      message_type: 1, // 1 = outgoing, 0 = incoming
-      direction: 'outbound',
-      phone_number: phoneNumber,
-      from: phoneNumber,
-      status: 'sent',
-      created_at: new Date().toISOString()
-    };
+    // Crear el mensaje en formato JSONB. Va por buildChatHistoryMessage y no a mano: la fila
+    // también la lee el Postgres Chat Memory de n8n, y sin `type` LangChain rompe el agente
+    // de respuestas para este contacto de forma permanente.
+    const messageData = buildChatHistoryMessage({
+      phone: phoneNumber,
+      contenido: content.trim(),
+      fecha: new Date().toISOString()
+    });
 
     // Insertar el mensaje en la base de datos
     const { data: newMessage, error } = await supabase

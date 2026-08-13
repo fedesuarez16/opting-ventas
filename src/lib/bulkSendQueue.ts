@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getTemplateByKey } from '@/lib/whatsapp-templates';
 import { isAllowedPhoneFrom } from '@/lib/whatsapp-lines';
 import { sendTemplate } from '@/lib/ycloudSender';
+import { buildChatHistoryMessage } from '@/lib/chatHistory';
 
 /** Pausa entre mensajes para no golpear el rate limit de YCloud. */
 const DELAY_ENTRE_ENVIOS_MS = 300;
@@ -285,9 +286,7 @@ export async function queueLeadsForSend(
  * `/chat` no lee de Chatwoot (a pesar de lo que dice CLAUDE.md) — lee de `chat_histories`,
  * la misma tabla que llena el workflow de n8n con cada turno de conversación. Un envío que
  * pega directo a la API de YCloud nunca pasa por ahí, así que aunque el mensaje se mande de
- * verdad, la conversación no aparece en el CRM. Esto replica el shape que ya entiende
- * `/api/chats/[id]/messages` (`message_type`/`direction`) para que la fila se vea igual que
- * una respuesta manual desde el chat.
+ * verdad, la conversación no aparece en el CRM.
  *
  * No falla el envío si esto falla: el mensaje YA salió por WhatsApp: perder la fila de
  * historial es peor que no bloquear al usuario por un error de logging.
@@ -300,16 +299,7 @@ async function registrarEnvioEnChatHistories(
   try {
     await (supabase as any).from('chat_histories').insert({
       session_id: phone,
-      message: {
-        content: contenido,
-        text: contenido,
-        message_type: 1,
-        direction: 'outbound',
-        phone_number: phone,
-        from: phone,
-        status: 'sent',
-        created_at: fecha,
-      },
+      message: buildChatHistoryMessage({ phone, contenido, fecha }),
     });
   } catch (error) {
     console.error('[bulkSendQueue] no se pudo registrar en chat_histories:', error);
