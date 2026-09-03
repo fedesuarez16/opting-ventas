@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { queueLeadsForSend } from '@/lib/bulkSendQueue';
 import { ingestarLeadsPrevioPago, type ContactoIngest } from '@/lib/previoPagoIngest';
+import {
+  TEMPLATE_KEY_SEGUIMIENTO_PREVIO_PAGO,
+  COLUMNA_SEGUIMIENTO_ENVIADO,
+} from '@/lib/previoPagoSeguimiento';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
@@ -53,9 +57,36 @@ export async function POST(req: Request) {
   if ('error' in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
+
+  // La carga manual y el cron mandan la MISMA plantilla, así que lo que sale por acá
+  // también tiene que dejar la marca. Sin esto los leads cargados a mano quedaban con la
+  // columna en NULL habiendo recibido el mensaje, y el cron los reclamaba en cada corrida
+  // para que el motor los excluyera por `ya_enviado`: ruido perpetuo, y en el CRM
+  // figuraban como no contactados.
+  //
+  // Sólo para la plantilla de seguimiento: `templateKey` es libre y marcar esta columna
+  // por un envío de otra plantilla sería mentir.
+  let marcados = 0;
+  if (
+    templateKey === TEMPLATE_KEY_SEGUIMIENTO_PREVIO_PAGO &&
+    result.lead_ids_contactados.length > 0
+  ) {
+    const { error: markError } = await (supabase as any)
+      .from('leads')
+      .update({ [COLUMNA_SEGUIMIENTO_ENVIADO]: new Date().toISOString() })
+      .in('id', result.lead_ids_contactados);
+    if (markError) {
+      // El mensaje ya salió: no se le devuelve un error al operador por la marca.
+      console.error('[previo-pago/cargar] error marcando seguimiento enviado', markError);
+    } else {
+      marcados = result.lead_ids_contactados.length;
+    }
+  }
+
   return NextResponse.json({
     ...result,
     leads_nuevos: ingest.nuevos,
     leads_existentes: ingest.existentes,
+    marcados_seguimiento: marcados,
   });
 }

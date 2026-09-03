@@ -19,6 +19,30 @@ export interface BulkSendCounts {
   ya_enviado: number;
 }
 
+export type ExclusionReason = keyof BulkSendCounts;
+
+/**
+ * Exclusiones que significan "esta persona YA tiene el mensaje": no hay nada que
+ * reintentar y el lead tiene que quedar marcado como contactado.
+ *
+ * `duplicado` entra acá porque la exclusión es por teléfono repetido dentro del mismo
+ * lote: otro lead con ese mismo número sí recibió el mensaje, así que la persona lo tiene.
+ *
+ * El resto de las exclusiones son transitorias — `phone_from_*` y `linea_incompatible` se
+ * arreglan corrigiendo el lead, y `estado_bloqueado`/`deriva_humano` dependen de un estado
+ * que el equipo cambia desde el CRM — así que esos leads vuelven a la cola en la próxima
+ * corrida.
+ */
+const EXCLUSIONES_DEFINITIVAS: ReadonlySet<string> = new Set<ExclusionReason>([
+  'ya_enviado',
+  'duplicado',
+]);
+
+/** Ver `EXCLUSIONES_DEFINITIVAS`. Función pura. */
+export function esExclusionDefinitiva(reason: string): boolean {
+  return EXCLUSIONES_DEFINITIVAS.has(reason);
+}
+
 export interface BulkSendResult {
   batch_id: string;
   total_seleccionado: number;
@@ -31,6 +55,17 @@ export interface BulkSendResult {
   total_fallado: number;
   primer_error?: string;
   warning?: string;
+  /**
+   * Leads cuya persona quedó con el mensaje en la mano: se envió ahora, o ya lo tenía
+   * (`ya_enviado`/`duplicado`). Quien lleve una columna de "seguimiento enviado" tiene que
+   * marcarlos, incluso los que no generaron un envío en esta corrida.
+   */
+  lead_ids_contactados: number[];
+  /**
+   * Leads que no recibieron nada y podrían recibirlo más adelante: excluidos por un motivo
+   * transitorio, o rechazados por Meta. Tienen que quedar SIN marcar para volver a entrar.
+   */
+  lead_ids_reintentables: number[];
 }
 
 export type BulkSendError = { error: string; status: number };
@@ -213,6 +248,8 @@ export async function queueLeadsForSend(
   let totalEnviado = 0;
   let totalFallado = 0;
   let primerError: string | undefined;
+  const idsEnviados: number[] = [];
+  const idsFallados: number[] = [];
 
   for (let i = 0; i < pendientes.length; i++) {
     const fila = pendientes[i];
@@ -225,6 +262,7 @@ export async function queueLeadsForSend(
 
     if (envio.ok) {
       totalEnviado++;
+      idsEnviados.push(fila.lead_id);
       const sentAt = new Date().toISOString();
       await (supabase as any)
         .from('cola_envio_masivo')
@@ -237,6 +275,7 @@ export async function queueLeadsForSend(
       });
     } else {
       totalFallado++;
+      idsFallados.push(fila.lead_id);
       if (!primerError) primerError = envio.error;
       console.error(`[bulkSendQueue] fallo lead_id=${fila.lead_id}: ${envio.error}`);
       await (supabase as any)
@@ -277,6 +316,14 @@ export async function queueLeadsForSend(
     excluded_by_reason: counts,
     total_enviado: totalEnviado,
     total_fallado: totalFallado,
+    lead_ids_contactados: [
+      ...idsEnviados,
+      ...excluidos.filter((e) => esExclusionDefinitiva(e.exclusion_reason)).map((e) => e.lead_id),
+    ],
+    lead_ids_reintentables: [
+      ...idsFallados,
+      ...excluidos.filter((e) => !esExclusionDefinitiva(e.exclusion_reason)).map((e) => e.lead_id),
+    ],
     ...(primerError ? { primer_error: primerError } : {}),
     ...(warning ? { warning } : {}),
   };
