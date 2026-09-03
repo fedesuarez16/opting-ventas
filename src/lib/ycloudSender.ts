@@ -56,6 +56,33 @@ export function buildTemplateBody({
   };
 }
 
+export interface YCloudTextBody {
+  from: string;
+  to: string;
+  type: 'text';
+  text: { body: string };
+}
+
+/**
+ * Arma el body de un mensaje de TEXTO LIBRE. Función pura.
+ *
+ * Texto libre y plantilla no son intercambiables: WhatsApp sólo deja mandar texto libre
+ * dentro de la ventana de servicio de 24hs, contada desde el último mensaje ENTRANTE de esa
+ * persona. Fuera de la ventana, Meta lo rechaza y hay que sí o sí usar una plantilla
+ * aprobada. A cambio, adentro de la ventana no cuesta nada y no hay que esperar aprobación.
+ */
+export function buildTextBody({
+  from,
+  to,
+  texto,
+}: {
+  from: string;
+  to: string;
+  texto: string;
+}): YCloudTextBody {
+  return { from, to, type: 'text', text: { body: texto } };
+}
+
 export type SendTemplateResult =
   | { ok: true; messageId: string }
   | { ok: false; error: string };
@@ -75,6 +102,46 @@ export async function sendTemplate({
   templateName: string;
   language: string;
 }): Promise<SendTemplateResult> {
+  return postDirectly(from, phone, (fromE164, to) =>
+    buildTemplateBody({ from: fromE164, to, templateName, language })
+  );
+}
+
+/**
+ * Manda un mensaje de TEXTO LIBRE. Mismo contrato que `sendTemplate`: no lanza, devuelve el
+ * error como valor.
+ *
+ * Sólo funciona dentro de la ventana de servicio de 24hs. Fuera de ella YCloud devuelve el
+ * error de Meta y el llamador tiene que caer a una plantilla aprobada. Por eso el llamador
+ * debe chequear la ventana ANTES de llamar acá: no para evitar el error, sino para no marcar
+ * como contactada a gente que no recibió nada.
+ */
+export async function sendText({
+  from,
+  phone,
+  texto,
+}: {
+  from: string | null | undefined;
+  phone: string | null | undefined;
+  texto: string;
+}): Promise<SendTemplateResult> {
+  if (!texto.trim()) return { ok: false, error: 'Texto vacío' };
+  return postDirectly(from, phone, (fromE164, to) =>
+    buildTextBody({ from: fromE164, to, texto })
+  );
+}
+
+/**
+ * Valida credenciales y números, postea a `sendDirectly` y normaliza la respuesta.
+ *
+ * Compartido entre plantilla y texto libre para que el manejo de errores de YCloud —que es
+ * la parte delicada— sea idéntico en los dos caminos y no se bifurque con el tiempo.
+ */
+async function postDirectly(
+  from: string | null | undefined,
+  phone: string | null | undefined,
+  armarBody: (fromE164: string, to: string) => YCloudTemplateBody | YCloudTextBody
+): Promise<SendTemplateResult> {
   const apiKey = process.env.YCLOUD_API_KEY;
   if (!apiKey) return { ok: false, error: 'YCLOUD_API_KEY faltante' };
 
@@ -88,7 +155,7 @@ export async function sendTemplate({
     const res = await fetch(YCLOUD_SEND_URL, {
       method: 'POST',
       headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildTemplateBody({ from: fromE164, to, templateName, language })),
+      body: JSON.stringify(armarBody(fromE164, to)),
     });
 
     const json = await res.json().catch(() => ({}));

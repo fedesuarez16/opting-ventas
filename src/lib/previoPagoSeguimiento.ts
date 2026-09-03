@@ -60,6 +60,41 @@ export function inicioVentanaSeguimiento(
   return new Date(now.getTime() - horas * HORA_MS).toISOString();
 }
 
+/**
+ * Une los candidatos que salieron por `etiqueta = previo_pago` con los que la ingesta
+ * identificó en el log, sin repetir ids y sin pasarse del tope.
+ *
+ * Hacen falta las dos listas porque ninguna alcanza sola:
+ *
+ * - Por etiqueta se pierde a quien YA era lead antes de abandonar el pago. La ingesta del
+ *   cron corre con `etiquetarExistentes: false` para no pisar `etiqueta`, que es un campo
+ *   libre del equipo, así que ese lead se queda sin la etiqueta y el SELECT no lo ve nunca.
+ *   Medido contra el log real: 12 de 35 abandonos de 14 días quedaban invisibles.
+ * - Por log se pierde a los cargados a mano desde /previo-pago y a todos si el log no
+ *   responde.
+ *
+ * Los de la etiqueta van primero porque vienen ordenados por `created_at` ascendente: son
+ * los más cerca de caerse de la ventana rodante, así que si se llega al tope son los que
+ * no pueden esperar a la próxima corrida.
+ *
+ * Función pura.
+ */
+export function unirCandidatos<T extends { id: number }>(
+  porEtiqueta: T[],
+  porLog: T[],
+  tope: number
+): T[] {
+  const vistos = new Set<number>();
+  const unidos: T[] = [];
+  for (const candidato of [...porEtiqueta, ...porLog]) {
+    if (vistos.has(candidato.id)) continue;
+    vistos.add(candidato.id);
+    unidos.push(candidato);
+    if (unidos.length === tope) break;
+  }
+  return unidos;
+}
+
 /** Día calendario argentino de `now` como `YYYY-MM-DD`. Función pura. */
 export function fechaArgentina(now: Date = new Date()): string {
   const arNow = new Date(now.getTime() - AR_OFFSET_MS);

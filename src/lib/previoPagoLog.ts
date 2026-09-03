@@ -32,6 +32,14 @@ export interface PrevioPagoContacto {
   ultimoIntento: string;
   /** true si el teléfono llegó a `approved` en algún momento del log. */
   compro: boolean;
+  /**
+   * Fecha del PRIMER evento `approved`, o `undefined` si nunca compró.
+   *
+   * No alcanza con `primerIntento` para decidir a quién pedirle una reseña: el que entró
+   * el lunes, falló dos veces y recién compró el jueves tiene `primerIntento` del lunes.
+   * Filtrar por ahí lo dejaría fuera de la ventana de reseñas para siempre.
+   */
+  fechaCompra?: string;
 }
 
 export interface PrevioPagoResumen {
@@ -110,6 +118,9 @@ export function resumirPrevioPago(eventos: PrevioPagoEvento[]): PrevioPagoResume
       primerIntento: ordenados[0].fecha,
       ultimoIntento: ordenados[ordenados.length - 1].fecha,
       compro,
+      ...(compro
+        ? { fechaCompra: ordenados.find((e) => e.estado === 'approved')!.fecha }
+        : {}),
     };
 
     if (compro) {

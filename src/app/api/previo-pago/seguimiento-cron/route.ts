@@ -9,7 +9,14 @@ import {
   LOOKBACK_HORAS,
   inicioVentanaSeguimiento,
   contactosDeUltimosDias,
+  unirCandidatos,
 } from '@/lib/previoPagoSeguimiento';
+import {
+  COLUMNA_RESENA_ENVIADA,
+  procesarResenasPrevioPago,
+  separarCompradores,
+} from '@/lib/previoPagoResena';
+import type { PrevioPagoContacto } from '@/lib/previoPagoLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,12 +57,15 @@ function getSupabase() {
  * `seguimiento_previo_pago_enviado IS NULL`, el claim es atómico, y `queueLeadsForSend`
  * además excluye por `ya_enviado` contra `cola_envio_masivo`.
  *
- * Corre en dos fases:
+ * Corre en tres fases, con una sola bajada del log para las tres:
  *   1. Ingesta — baja el log, se queda con los que iniciaron el pago en los últimos
  *      `DIAS_INGESTA` días argentinos sin llegar a `approved`, y crea como lead a los que
  *      no existían.
- *   2. Envío — toma los leads `previo_pago` de la ventana rodante que todavía no
- *      recibieron el seguimiento, los marca y dispara el envío real.
+ *   2. Reseñas — a los que SÍ llegaron a `approved` en la ventana de compra les pide la
+ *      reseña con el link. Ver `previoPagoResena.ts`.
+ *   3. Recupero — toma los leads `previo_pago` de la ventana rodante que todavía no
+ *      recibieron el seguimiento, descarta a los que ya compraron, los marca y dispara el
+ *      envío real.
  *
  * El marcado ocurre ANTES del envío y de forma atómica (`IS NULL` en el WHERE del
  * UPDATE): si el cron se dispara dos veces, la segunda corrida no reclama ninguna fila
@@ -84,10 +94,16 @@ export async function GET(req: NextRequest) {
   // campo libre que edita el equipo y un cron no debería pisarlo.
   let ingestados = 0;
   let logCaido = false;
+  let compradores: PrevioPagoContacto[] = [];
+  // Ids de TODOS los que el log marca como abandono reciente, nuevos y preexistentes. Son
+  // la segunda fuente de destinatarios de la fase 3: sin esto, el que ya era lead antes de
+  // abandonar el pago no entra nunca, porque no se le pone la etiqueta.
+  let idsDelLog: number[] = [];
   const resumen = await fetchResumenPrevioPago();
   if (!resumen) {
     logCaido = true;
   } else {
+    compradores = resumen.compradores;
     const delDia = contactosDeUltimosDias(resumen.contactos, ahora);
     if (delDia.length > 0) {
       const ingest = await ingestarLeadsPrevioPago(
@@ -100,17 +116,23 @@ export async function GET(req: NextRequest) {
         console.error('[previo-pago/seguimiento-cron] ingesta falló:', ingest.error);
       } else {
         ingestados = ingest.nuevos;
+        idsDelLog = ingest.leadIds;
       }
     }
   }
 
-  // Fase 2 — envío. Sin tope superior de fecha a propósito: los leads que se acaban de
-  // ingestar (y los que entren mientras corre esto) tienen que entrar en esta misma
-  // corrida. Se ordena por `created_at` para que, si se llega al tope, salgan primero los
-  // más viejos — que son los que están más cerca de caerse de la ventana.
-  const { data: candidatos, error: selectError } = await (supabase as any)
+  // Fase 2 — reseñas: a los que SÍ llegaron a `approved` en la ventana de compra se les
+  // pide la reseña con el link. Va antes del recupero para que corra igual cuando no hay
+  // ningún abandono pendiente — el endpoint tiene varias salidas tempranas más abajo.
+  const resenas = await procesarResenasPrevioPago(supabase, compradores, { ahora, dryRun });
+
+  // Fase 3 — envío del recupero. Sin tope superior de fecha a propósito: los leads que se
+  // acaban de ingestar (y los que entren mientras corre esto) tienen que entrar en esta
+  // misma corrida. Se ordena por `created_at` para que, si se llega al tope, salgan primero
+  // los más viejos — que son los que están más cerca de caerse de la ventana.
+  const { data: porEtiqueta, error: selectError } = await (supabase as any)
     .from('leads')
-    .select('id')
+    .select('id, phone')
     .eq('etiqueta', ETIQUETA_PREVIO_PAGO)
     .gte('created_at', desde)
     .is(COLUMNA_SEGUIMIENTO_ENVIADO, null)
@@ -122,7 +144,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: selectError.message }, { status: 500 });
   }
 
-  const ids = (candidatos ?? []).map((c: any) => c.id as number);
+  // Segunda fuente: los que el log señala como abandono reciente. Va por `id` y SIN filtro
+  // de `created_at` a propósito — para el lead que ya existía, `created_at` es de cuando
+  // entró al CRM y no tiene nada que ver con cuándo abandonó el pago; filtrarlo por ahí lo
+  // dejaría afuera igual. La ventana la impone la ingesta, que sólo mira `DIAS_INGESTA`.
+  let porLog: any[] = [];
+  if (idsDelLog.length > 0) {
+    const { data, error: logSelectError } = await (supabase as any)
+      .from('leads')
+      .select('id, phone')
+      .in('id', idsDelLog)
+      .is(COLUMNA_SEGUIMIENTO_ENVIADO, null)
+      .limit(MAX_POR_CORRIDA);
+    if (logSelectError) {
+      // No es fatal: seguimos con los de la etiqueta en vez de abortar la corrida entera.
+      console.error('[previo-pago/seguimiento-cron] SELECT por log error', logSelectError);
+    } else {
+      porLog = data ?? [];
+    }
+  }
+
+  const candidatos = unirCandidatos(porEtiqueta ?? [], porLog, MAX_POR_CORRIDA);
+  const rescatadosPorLog = candidatos.length - (porEtiqueta ?? []).length;
+
+  // Este SELECT elige por etiqueta en la tabla, sin volver a mirar el log: el que fue
+  // ingestado ayer como abandonado y compró hoy a la mañana sigue acá adentro y recibiría
+  // el "no completaste el pago" habiendo pagado. Se lo saca contra los compradores del log.
+  // Si el log está caído, `compradores` viene vacío y no se filtra a nadie: preferimos el
+  // riesgo de un recupero de más antes que no mandar ninguno.
+  const { aRecuperar, yaCompraron } = separarCompradores(candidatos, compradores);
+  const ids = aRecuperar.map((c: any) => c.id as number);
+  const excluidosPorCompra = yaCompraron.length;
 
   // Alarma del último agujero que queda: un lead que se cae de la ventana rodante sin
   // haber recibido nunca la plantilla (log caído varios días seguidos, tope alcanzado
@@ -149,13 +201,16 @@ export async function GET(req: NextRequest) {
       leads_que_se_crearian: ingestados,
       leads_ya_en_tabla_pendientes: ids.length,
       leads_que_recibirian_el_mensaje: totalDestinatarios,
+      excluidos_por_haber_comprado: excluidosPorCompra,
+      resenas,
       vencidos_sin_enviar: vencidos,
       nota: 'Simulación: no se creó ningún lead, no se marcó nada y no se envió ningún mensaje.',
-      ...(logCaido || warningVencidos.length
+      ...(logCaido || warningVencidos.length || resenas.warning
         ? {
             warning: [
               ...(logCaido ? ['El log de previo pago no respondió'] : []),
               ...warningVencidos,
+              ...(resenas.warning ? [resenas.warning] : []),
             ].join(' | '),
           }
         : {}),
@@ -171,12 +226,15 @@ export async function GET(req: NextRequest) {
       ingestados,
       candidatos: 0,
       enviados: 0,
+      excluidos_por_haber_comprado: excluidosPorCompra,
+      resenas,
       vencidos_sin_enviar: vencidos,
-      ...(logCaido || warningVencidos.length
+      ...(logCaido || warningVencidos.length || resenas.warning
         ? {
             warning: [
               ...(logCaido ? ['El log de previo pago no respondió; no hubo ingesta'] : []),
               ...warningVencidos,
+              ...(resenas.warning ? [resenas.warning] : []),
             ].join(' | '),
           }
         : {}),
@@ -205,6 +263,8 @@ export async function GET(req: NextRequest) {
       ingestados,
       candidatos: ids.length,
       enviados: 0,
+      excluidos_por_haber_comprado: excluidosPorCompra,
+      resenas,
       vencidos_sin_enviar: vencidos,
     });
   }
@@ -256,14 +316,17 @@ export async function GET(req: NextRequest) {
       ? [`Se alcanzó el tope de ${MAX_POR_CORRIDA} leads por corrida; el resto sale en la próxima`]
       : []),
     ...warningVencidos,
+    ...(resenas.warning ? [resenas.warning] : []),
     ...(result.warning ? [result.warning] : []),
   ];
 
   console.log(
     `[previo-pago/seguimiento-cron] ventana=${desde}→${hasta} ingestados=${ingestados} ` +
-      `candidatos=${ids.length} reclamados=${idsReclamados.length} ` +
+      `candidatos=${ids.length} rescatados_por_log=${rescatadosPorLog} ` +
+      `ya_compraron=${excluidosPorCompra} reclamados=${idsReclamados.length} ` +
       `efectivos=${result.total_efectivo} excluidos=${result.total_excluido} ` +
-      `desmarcados=${desmarcados} vencidos=${vencidos}` +
+      `desmarcados=${desmarcados} vencidos=${vencidos} ` +
+      `resenas_enviadas=${resenas.enviados}/${resenas.compradores_en_ventana}` +
       `${warnings.length ? ` warnings=${warnings.join(' | ')}` : ''}`
   );
 
@@ -271,8 +334,11 @@ export async function GET(req: NextRequest) {
     ventana: { desde, hasta, lookback_horas: LOOKBACK_HORAS },
     ingestados,
     candidatos: ids.length,
+    rescatados_por_log: rescatadosPorLog,
     enviados: result.total_enviado,
     desmarcados,
+    excluidos_por_haber_comprado: excluidosPorCompra,
+    resenas,
     vencidos_sin_enviar: vencidos,
     ...result,
     ...(warnings.length ? { warning: warnings.join(' | ') } : {}),
@@ -303,7 +369,10 @@ async function contarVencidosSinEnviar(
     .eq('etiqueta', ETIQUETA_PREVIO_PAGO)
     .gte('created_at', piso.toISOString())
     .lt('created_at', desde)
-    .is(COLUMNA_SEGUIMIENTO_ENVIADO, null);
+    .is(COLUMNA_SEGUIMIENTO_ENVIADO, null)
+    // Quien recibió el pedido de reseña no es una fuga: no recibió el recupero porque
+    // compró, que es exactamente lo que tiene que pasar.
+    .is(COLUMNA_RESENA_ENVIADA, null);
 
   if (error) {
     console.error('[previo-pago/seguimiento-cron] error contando vencidos', error);

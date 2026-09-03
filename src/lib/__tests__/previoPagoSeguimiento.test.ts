@@ -5,6 +5,7 @@ import {
   inicioVentanaSeguimiento,
   fechaArgentina,
   contactosDeUltimosDias,
+  unirCandidatos,
 } from '../previoPagoSeguimiento';
 import type { PrevioPagoContacto } from '../previoPagoLog';
 
@@ -150,5 +151,51 @@ describe('contactosDeUltimosDias', () => {
 
   it('la ingesta mira al menos hoy y ayer', () => {
     expect(DIAS_INGESTA).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/**
+ * El SELECT por `etiqueta` deja afuera a quien YA era lead antes de abandonar el pago: la
+ * ingesta del cron no etiqueta a los existentes (`etiquetarExistentes: false`) para no
+ * pisar un campo que edita el equipo, así que esa gente nunca entra al envío. Medido sobre
+ * el log real: 12 de 35 abandonos en 14 días quedaban invisibles.
+ *
+ * La unión con los ids que devuelve la ingesta cierra ese agujero sin tocar `etiqueta`.
+ */
+describe('unirCandidatos', () => {
+  const tope = 1000;
+
+  it('suma los del log a los de la etiqueta', () => {
+    const porEtiqueta = [{ id: 1 }, { id: 2 }];
+    const porLog = [{ id: 3 }];
+    expect(unirCandidatos(porEtiqueta, porLog, tope).map((c) => c.id)).toEqual([1, 2, 3]);
+  });
+
+  it('no repite al que aparece en las dos listas', () => {
+    const porEtiqueta = [{ id: 1 }, { id: 2 }];
+    const porLog = [{ id: 2 }, { id: 3 }];
+    expect(unirCandidatos(porEtiqueta, porLog, tope).map((c) => c.id)).toEqual([1, 2, 3]);
+  });
+
+  it('rescata al lead preexistente que el filtro por etiqueta no ve', () => {
+    // Caso real: lead creado antes de abandonar el pago, con `etiqueta` en null.
+    const porEtiqueta: { id: number }[] = [];
+    const porLog = [{ id: 24521 }];
+    expect(unirCandidatos(porEtiqueta, porLog, tope).map((c) => c.id)).toEqual([24521]);
+  });
+
+  it('respeta el tope y prioriza a los de la etiqueta, que son los más cerca de vencer', () => {
+    const porEtiqueta = [{ id: 1 }, { id: 2 }];
+    const porLog = [{ id: 3 }, { id: 4 }];
+    expect(unirCandidatos(porEtiqueta, porLog, 3).map((c) => c.id)).toEqual([1, 2, 3]);
+  });
+
+  it('preserva el objeto entero, no sólo el id: el envío necesita el phone', () => {
+    const porLog = [{ id: 7, phone: '+5492915131748' }];
+    expect(unirCandidatos([], porLog, tope)).toEqual([{ id: 7, phone: '+5492915131748' }]);
+  });
+
+  it('devuelve vacío si no hay candidatos por ningún lado', () => {
+    expect(unirCandidatos([], [], tope)).toEqual([]);
   });
 });

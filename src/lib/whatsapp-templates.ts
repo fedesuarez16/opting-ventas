@@ -42,6 +42,31 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
       'Utility del curso de manipulación de alimentos, dada de alta el 2026-07-31 en la WABA 1140283618163985 (Carnet) para poder enviarla por +5491141872290. La usa el cron de las 15hs AR.',
   },
   {
+    key: 'previo_pago_resena',
+    displayName: 'Previo Pago — Pedido de reseña (pendiente Meta)',
+    hsmName: 'TODO_hsm_previo_pago_resena',
+    language: 'es_AR',
+    phoneFrom: '+5491141872290',
+    // Body propuesto para mandar a aprobar a Meta, mismo criterio que las `sh_seguimiento_*`.
+    // SIN variables a propósito: `buildTemplateBody` no manda `components`, así que una
+    // plantilla con {{1}} se envía con la variable vacía y Meta la rechaza en runtime.
+    // El link va en el texto y no en un botón URL por la misma razón — los botones también
+    // viajan en `components`. Categoría UTILITY: es el post-venta de una compra concreta,
+    // que es lo que Meta acepta acá; redactada como MARKETING la rechazan o la recategorizan.
+    body:
+      'Hola! Gracias por inscribirte al curso de Manipulación de Alimentos. ' +
+      'Queremos saber cómo fue tu experiencia: dejanos tu reseña acá 👉 ' +
+      'https://optingsha.com.ar/resena — nos toma un minuto y nos ayuda un montón. ¡Gracias!',
+    description:
+      'Se le manda a quien SÍ completó el pago (estado `approved` en optingsha.com.ar/estado.log) ' +
+      'para pedirle una reseña. Va por la línea de Carnet (WABA 1140283618163985), la misma que el ' +
+      'recupero: la plantilla tiene que darse de alta en ESA WABA o YCloud responde 403. ' +
+      'PENDIENTE de aprobación de Meta. Para darla de alta NO hace falta tocar este archivo: ' +
+      'seteá `PREVIO_PAGO_RESENA_HSM` con el nombre real y la corrida siguiente del cron ya la usa ' +
+      '(ver HSM_OVERRIDE_ENV). Mientras el hsmName efectivo empiece con TODO_, `esPlantillaPendiente` ' +
+      'corta el envío antes de encolar: no se marca a nadie ni se dispara ningún mensaje.',
+  },
+  {
     key: 'carnet_recordatorio_v1',
     displayName: 'Recordatorio Carnet (placeholder)',
     hsmName: 'TODO_hsm_carnet_recordatorio',
@@ -73,6 +98,51 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
   },
 ];
 
+/**
+ * Plantillas cuyo `hsmName` se puede pisar por env var, sin tocar código ni redeployar.
+ *
+ * Existe para el caso "la plantilla está esperando aprobación de Meta": el código queda
+ * mergeado con un placeholder, y el día que Meta la aprueba alcanza con setear la env var
+ * en Vercel para que la corrida siguiente del cron ya la use. Sin esto, un dato que sólo
+ * se conoce en runtime obliga a un commit y un deploy.
+ *
+ * Sólo para plantillas pendientes: una plantilla ya verificada se queda con su nombre
+ * hardcodeado, que es evidencia de haberla probado contra YCloud.
+ */
+const HSM_OVERRIDE_ENV: Readonly<Record<string, string>> = {
+  previo_pago_resena: 'PREVIO_PAGO_RESENA_HSM',
+};
+
+/**
+ * Devuelve la plantilla, con el `hsmName` pisado por su env var si la tiene seteada.
+ *
+ * Se lee el env en cada llamada y no al importar el módulo: `WHATSAPP_TEMPLATES` es un
+ * const de módulo y en el cliente Next inlinea las env vars sin `NEXT_PUBLIC_` como
+ * `undefined`. Resolviendo acá, el server —único que envía— siempre ve el valor real.
+ */
 export function getTemplateByKey(key: string): WhatsappTemplate | undefined {
-  return WHATSAPP_TEMPLATES.find((t) => t.key === key);
+  const template = WHATSAPP_TEMPLATES.find((t) => t.key === key);
+  if (!template) return undefined;
+
+  const envVar = HSM_OVERRIDE_ENV[template.key];
+  const override = envVar ? process.env[envVar]?.trim() : undefined;
+
+  return override ? { ...template, hsmName: override } : template;
+}
+
+/** Prefijo que marca un `hsmName` que todavía no existe en Meta. Ver `esPlantillaPendiente`. */
+const HSM_PLACEHOLDER_PREFIX = 'TODO_';
+
+/**
+ * true si la plantilla todavía no tiene un HSM real dado de alta en Meta.
+ *
+ * Un cron que dispare contra un placeholder es el peor final posible: YCloud rechaza
+ * mensaje por mensaje, el batch queda lleno de `fallado`, y los leads pasaron por el claim
+ * atómico quedando marcados como contactados sin haber recibido nada. Chequear esto ANTES
+ * de encolar corta el problema de raíz.
+ *
+ * Función pura.
+ */
+export function esPlantillaPendiente(template: WhatsappTemplate | undefined): boolean {
+  return !template || template.hsmName.startsWith(HSM_PLACEHOLDER_PREFIX);
 }

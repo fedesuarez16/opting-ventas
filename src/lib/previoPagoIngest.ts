@@ -31,6 +31,20 @@ export interface ContactoIngest {
   remoteJid: string;
   nombre?: string;
   estados?: string[];
+  /** Fecha del `approved`, sólo para los compradores. Ver `previoPagoResena.ts`. */
+  fechaCompra?: string;
+}
+
+export interface IngestOptions {
+  etiquetarExistentes: boolean;
+  dryRun?: boolean;
+  /**
+   * Etiqueta con la que se crean los leads nuevos. Por defecto `previo_pago` (abandonos);
+   * el flujo de reseñas usa `previo_pago_comprador`, que es la población opuesta.
+   */
+  etiqueta?: string;
+  /** Cómo se arma `mensaje_inicial`. Por defecto, el texto de "previo pago sin completar". */
+  mensajeInicial?: (contacto: ContactoIngest) => string;
 }
 
 export interface IngestResult {
@@ -58,7 +72,13 @@ export type IngestError = { error: string; status: number };
 export async function ingestarLeadsPrevioPago(
   supabase: ReturnType<typeof createClient>,
   contactos: ContactoIngest[],
-  { etiquetarExistentes, dryRun = false }: { etiquetarExistentes: boolean; dryRun?: boolean }
+  {
+    etiquetarExistentes,
+    dryRun = false,
+    etiqueta = ETIQUETA_PREVIO_PAGO,
+    mensajeInicial = (c) =>
+      `Previo pago sin completar (${(c.estados || []).join(', ') || 'previopago'}) — optingsha.com.ar/estado.log`,
+  }: IngestOptions
 ): Promise<IngestResult | IngestError> {
   if (contactos.length === 0) {
     return { leadIds: [], idsNuevos: [], nuevos: 0, existentes: 0 };
@@ -109,8 +129,8 @@ export async function ingestarLeadsPrevioPago(
       estado: 'frio',
       chat_activo: 0,
       phone_from: PREVIO_PAGO_PHONE_FROM,
-      etiqueta: ETIQUETA_PREVIO_PAGO,
-      mensaje_inicial: `Previo pago sin completar (${(i.estados || []).join(', ') || 'previopago'}) — optingsha.com.ar/estado.log`,
+      etiqueta,
+      mensaje_inicial: mensajeInicial(i),
       timestamp_mensaje: new Date().toISOString(),
     }));
 
@@ -136,7 +156,7 @@ export async function ingestarLeadsPrevioPago(
   if (etiquetarExistentes && idsExistentes.length > 0) {
     const { error: updateError } = await (supabase as any)
       .from('leads')
-      .update({ etiqueta: ETIQUETA_PREVIO_PAGO })
+      .update({ etiqueta })
       .in('id', idsExistentes);
     if (updateError) {
       console.error('[previoPagoIngest] Error etiquetando leads existentes:', updateError);
