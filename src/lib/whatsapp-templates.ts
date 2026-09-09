@@ -56,7 +56,7 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
     body:
       'Hola! Gracias por inscribirte al curso de Manipulación de Alimentos. ' +
       'Queremos saber cómo fue tu experiencia: dejanos tu reseña acá 👉 ' +
-      'https://optingsha.com.ar/resena — nos toma un minuto y nos ayuda un montón. ¡Gracias!',
+      'https://g.page/r/Cf2VgyVMnUb-EBE/review — nos toma un minuto y nos ayuda un montón. ¡Gracias!',
     description:
       'Se le manda a quien SÍ completó el pago (estado `approved` en optingsha.com.ar/estado.log) ' +
       'para pedirle una reseña. Va por la línea de Carnet (WABA 1140283618163985), la misma que el ' +

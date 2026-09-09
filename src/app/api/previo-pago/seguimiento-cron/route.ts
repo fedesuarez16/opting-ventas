@@ -62,7 +62,8 @@ function getSupabase() {
  *      `DIAS_INGESTA` días argentinos sin llegar a `approved`, y crea como lead a los que
  *      no existían.
  *   2. Reseñas — a los que SÍ llegaron a `approved` en la ventana de compra les pide la
- *      reseña con el link. Ver `previoPagoResena.ts`.
+ *      reseña con el link. Cascada de dos vías: texto libre a quien tenga la ventana de
+ *      servicio de 24hs abierta, plantilla aprobada al resto. Ver `previoPagoResena.ts`.
  *   3. Recupero — toma los leads `previo_pago` de la ventana rodante que todavía no
  *      recibieron el seguimiento, descarta a los que ya compraron, los marca y dispara el
  *      envío real.
@@ -326,7 +327,9 @@ export async function GET(req: NextRequest) {
       `ya_compraron=${excluidosPorCompra} reclamados=${idsReclamados.length} ` +
       `efectivos=${result.total_efectivo} excluidos=${result.total_excluido} ` +
       `desmarcados=${desmarcados} vencidos=${vencidos} ` +
-      `resenas_enviadas=${resenas.enviados}/${resenas.compradores_en_ventana}` +
+      `resenas_enviadas=${resenas.enviados}/${resenas.compradores_en_ventana} ` +
+      `resenas_libre=${resenas.enviados_texto_libre} resenas_plantilla=${resenas.enviados_plantilla} ` +
+      `resenas_sin_ventana=${resenas.sin_ventana_abierta} resenas_falladas=${resenas.fallados}` +
       `${warnings.length ? ` warnings=${warnings.join(' | ')}` : ''}`
   );
 
