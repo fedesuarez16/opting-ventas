@@ -43,8 +43,8 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
   },
   {
     key: 'previo_pago_resena',
-    displayName: 'Previo Pago — Pedido de reseña (pendiente Meta)',
-    hsmName: 'TODO_hsm_previo_pago_resena',
+    displayName: 'Previo Pago — Pedido de reseña (aprobada)',
+    hsmName: 'template_utility_20260909173015',
     language: 'es_AR',
     phoneFrom: '+5491141872290',
     // Body propuesto para mandar a aprobar a Meta, mismo criterio que las `sh_seguimiento_*`.
@@ -61,10 +61,10 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
       'Se le manda a quien SÍ completó el pago (estado `approved` en optingsha.com.ar/estado.log) ' +
       'para pedirle una reseña. Va por la línea de Carnet (WABA 1140283618163985), la misma que el ' +
       'recupero: la plantilla tiene que darse de alta en ESA WABA o YCloud responde 403. ' +
-      'PENDIENTE de aprobación de Meta. Para darla de alta NO hace falta tocar este archivo: ' +
-      'seteá `PREVIO_PAGO_RESENA_HSM` con el nombre real y la corrida siguiente del cron ya la usa ' +
-      '(ver HSM_OVERRIDE_ENV). Mientras el hsmName efectivo empiece con TODO_, `esPlantillaPendiente` ' +
-      'corta el envío antes de encolar: no se marca a nadie ni se dispara ningún mensaje.',
+      'Aprobada por Meta el 2026-09-09 (utility, es_AR). Es la vía PRINCIPAL de las reseñas, no un ' +
+      'plan B: medido contra el log real, 9 de cada 10 compradores pagan en la web sin escribir nunca ' +
+      'por WhatsApp, así que no tienen ventana de servicio abierta y el texto libre no les llega. ' +
+      'Se puede apuntar a otro HSM sin deploy seteando `PREVIO_PAGO_RESENA_HSM` (ver HSM_OVERRIDE_ENV).',
   },
   {
     key: 'carnet_recordatorio_v1',
@@ -101,13 +101,12 @@ export const WHATSAPP_TEMPLATES: WhatsappTemplate[] = [
 /**
  * Plantillas cuyo `hsmName` se puede pisar por env var, sin tocar código ni redeployar.
  *
- * Existe para el caso "la plantilla está esperando aprobación de Meta": el código queda
- * mergeado con un placeholder, y el día que Meta la aprueba alcanza con setear la env var
- * en Vercel para que la corrida siguiente del cron ya la use. Sin esto, un dato que sólo
- * se conoce en runtime obliga a un commit y un deploy.
+ * Nació para el caso "la plantilla está esperando aprobación de Meta", y se queda como
+ * escape hatch operativo: si Meta deshabilita un HSM o hay que rotarlo, se apunta a otro
+ * seteando la env var, sin commit ni deploy.
  *
- * Sólo para plantillas pendientes: una plantilla ya verificada se queda con su nombre
- * hardcodeado, que es evidencia de haberla probado contra YCloud.
+ * El default hardcodeado es siempre el nombre verificado contra YCloud — la env var es la
+ * excepción, no el camino normal. Si está vacía o sin definir, gana el hardcodeado.
  */
 const HSM_OVERRIDE_ENV: Readonly<Record<string, string>> = {
   previo_pago_resena: 'PREVIO_PAGO_RESENA_HSM',

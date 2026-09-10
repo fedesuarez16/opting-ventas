@@ -144,13 +144,19 @@ describe('plantilla de reseña', () => {
     expect(esPlantillaPendiente(template)).toBe(false);
   });
 
-  it('sin la env var sigue siendo un placeholder y el guard la frena', () => {
-    expect(esPlantillaPendiente(getTemplateByKey(TEMPLATE_KEY_RESENA_PREVIO_PAGO))).toBe(true);
+  // Aprobada por Meta el 2026-09-09. Es la vía principal de las reseñas: medido contra el log
+  // real, 9 de cada 10 compradores nunca escribieron por WhatsApp y no tienen ventana abierta.
+  it('apunta al HSM aprobado, así el guard la deja pasar sin env var', () => {
+    const template = getTemplateByKey(TEMPLATE_KEY_RESENA_PREVIO_PAGO);
+    expect(template!.hsmName).toBe('template_utility_20260909173015');
+    expect(esPlantillaPendiente(template)).toBe(false);
   });
 
-  it('la env var vacía no cuenta como plantilla dada de alta', () => {
+  it('la env var vacía no pisa el HSM hardcodeado', () => {
     vi.stubEnv('PREVIO_PAGO_RESENA_HSM', '');
-    expect(esPlantillaPendiente(getTemplateByKey(TEMPLATE_KEY_RESENA_PREVIO_PAGO))).toBe(true);
+    expect(getTemplateByKey(TEMPLATE_KEY_RESENA_PREVIO_PAGO)!.hsmName).toBe(
+      'template_utility_20260909173015'
+    );
   });
 
   // El override cambia el HSM, no la línea: la plantilla vive en la WABA de Carnet y
