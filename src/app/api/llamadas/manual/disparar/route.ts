@@ -58,7 +58,9 @@ export async function POST(req: NextRequest) {
     .from('llamadas_agendadas')
     .insert({
       lead_id: null,
-      nombre_contacto: (nombre ?? '').trim() || null,
+      // El CHECK `llamadas_lead_o_nombre_check` exige lead_id O nombre_contacto.
+      // Sin lead y sin nombre escrito, el teléfono es el identificador.
+      nombre_contacto: etiqueta,
       titulo: `Manual: ${etiqueta}`,
       inicio: ahora.toISOString(),
       fin: fin.toISOString(),
