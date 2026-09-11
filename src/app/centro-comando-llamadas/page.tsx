@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import LlamadaModal, { type LlamadaModalInitial } from '../calendario-llamadas/LlamadaModal';
 import BaseDiscadoTab from './BaseDiscadoTab';
+import MarcadorRapido from './MarcadorRapido';
 import {
   getLlamadasAll,
   searchLeadsLite,
@@ -244,6 +245,9 @@ export default function CentroComandoLlamadasPage() {
           </div>
           )}
         </div>
+
+        {/* Marcado manual: disponible en las dos solapas */}
+        <MarcadorRapido onLlamada={reload} />
 
         {/* Solapas */}
         <div className="mb-4 flex gap-1 border-b border-border">

@@ -15,8 +15,7 @@ import {
   type EstadoContacto,
 } from '../services/contactosDiscadoService';
 import type { ResultadoImport } from '@/lib/contactosDiscadoImport';
-
-const AGENTE_STORAGE_KEY = 'centro-llamadas:agente-telefono';
+import { useAgenteTelefono } from './useAgenteTelefono';
 
 const ESTADO_BADGE: Record<EstadoContacto, string> = {
   pendiente: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -41,27 +40,9 @@ export default function BaseDiscadoTab() {
   const [lote, setLote] = useState('');
   const [importando, setImportando] = useState(false);
 
-  const [agenteTelefono, setAgenteTelefono] = useState('');
+  const { agenteTelefono, setAgenteTelefono } = useAgenteTelefono();
   const [llamando, setLlamando] = useState<Set<string>>(new Set());
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
-
-  // El teléfono del agente es una comodidad de este navegador, no un dato del CRM.
-  useEffect(() => {
-    try {
-      const guardado = localStorage.getItem(AGENTE_STORAGE_KEY);
-      if (guardado) setAgenteTelefono(guardado);
-    } catch {
-      /* modo privado o storage bloqueado: se escribe a mano y listo */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      if (agenteTelefono) localStorage.setItem(AGENTE_STORAGE_KEY, agenteTelefono);
-    } catch {
-      /* idem */
-    }
-  }, [agenteTelefono]);
 
   const reload = useCallback(async () => {
     try {
