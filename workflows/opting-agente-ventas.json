@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-06-12T04:55:14.566Z",
+  "updatedAt": "2026-08-20T16:06:37.729Z",
   "createdAt": "2026-02-12T22:21:29.408Z",
   "id": "PxrfRFfaX-QGTqBlh2992",
   "name": "Opting - Agente Ventas",
   "description": null,
   "active": true,
   "isArchived": false,
-  "versionId": "a3b17444-b867-4267-8c54-0e1a219d9d2b",
-  "activeVersionId": "a3b17444-b867-4267-8c54-0e1a219d9d2b",
+  "versionId": "4b248e7b-9b31-40ba-ba8e-7b97dac3623c",
+  "activeVersionId": "4b248e7b-9b31-40ba-ba8e-7b97dac3623c",
   "versionCounter": 1802,
   "settings": {
     "executionOrder": "v1",
@@ -17,9 +17,9 @@
     "timeSavedMode": "fixed"
   },
   "_sync": {
-    "syncedAt": "2026-06-12T05:00:00.000Z",
-    "syncedBy": "sdd-apply batch 2 (servicio-llm-classifier)",
-    "method": "n8n_get_workflow full pull",
-    "note": "Full node/connection payload is in n8n live. This file is a snapshot header. To get full payload: n8n_get_workflow(id: PxrfRFfaX-QGTqBlh2992, mode: full). Key classifier nodes verified: Classifier-LLM (6cd87626), Classifier-LLM-1 (469b06a9), Classifier-Parse-Flags (bc5aa116), Classifier-Parse-Flags-1 (680a938a), Classifier-Update-Flags (8c12045b), Classifier-Update-Flags-1 (b6abb87b). All 6 have servicio field in system prompt, parse code, and UPDATE SQL."
+    "syncedAt": "2026-08-20T16:07:27.314Z",
+    "syncedBy": "manejo de audios (Es Audio? -> Preparar Aviso Audio -> Enviar Aviso Audio YCloud)",
+    "method": "PUT directo a /api/v1/workflows/:id con settings normalizado",
+    "note": "54 nodos, active. Payload completo en n8n live: n8n_get_workflow(id: PxrfRFfaX-QGTqBlh2992, mode: full). OJO: n8n_update_partial_workflow FALLA con \"settings must NOT have additional properties\" cuando el workflow tiene availableInMCP/binaryMode/timeSavedMode en settings, y updateSettings mergea en vez de reemplazar, asi que no lo arregla. Unica via de escritura: PUT con settings = {executionOrder, callerPolicy}. Ver workflows/PATCH-audios-agente-ventas.md."
   }
 }

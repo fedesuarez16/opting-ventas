@@ -6,6 +6,7 @@ import AppLayout from '../components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import LlamadaModal, { type LlamadaModalInitial } from '../calendario-llamadas/LlamadaModal';
+import BaseDiscadoTab from './BaseDiscadoTab';
 import {
   getLlamadasAll,
   searchLeadsLite,
@@ -60,6 +61,7 @@ const ESTADO_TWILIO_PILL: Record<string, string> = {
 };
 
 export default function CentroComandoLlamadasPage() {
+  const [tab, setTab] = useState<'agendadas' | 'discado'>('agendadas');
   const [llamadas, setLlamadas] = useState<LlamadaAgendada[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +216,7 @@ export default function CentroComandoLlamadasPage() {
         {/* Header */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-foreground">Centro de Llamadas</h1>
+          {tab === 'agendadas' && (
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -239,8 +242,33 @@ export default function CentroComandoLlamadasPage() {
               <option value="cancelada">Cancelada</option>
             </select>
           </div>
+          )}
         </div>
 
+        {/* Solapas */}
+        <div className="mb-4 flex gap-1 border-b border-border">
+          {([
+            ['agendadas', 'Llamadas agendadas'],
+            ['discado', 'Base de discado'],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={
+                'px-4 py-2 text-sm font-medium transition-colors ' +
+                (tab === id
+                  ? 'border-b-2 border-blue-600 text-blue-700'
+                  : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'agendadas' && (
+        <>
         {syncResult && (
           <div className="mb-3 flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             <span>{syncResult}</span>
@@ -423,6 +451,10 @@ export default function CentroComandoLlamadasPage() {
             }}
           />
         )}
+        </>
+        )}
+
+        {tab === 'discado' && <BaseDiscadoTab />}
       </div>
     </AppLayout>
   );

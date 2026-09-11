@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import twilio from 'twilio';
+import { normalizarTelefonoAR, esTelefonoArgentino } from '@/lib/telefonoAR';
 
 let twilioClient: ReturnType<typeof twilio> | null = null;
 function getTwilio() {
@@ -22,13 +23,6 @@ function getSupabase() {
   return supabaseClient;
 }
 
-function toE164(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
-  return `+${digits}`;
-}
-
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization') ?? '';
   const secret = process.env.CRON_SECRET;
@@ -37,9 +31,12 @@ export async function GET(req: NextRequest) {
   }
 
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!fromNumber) {
     return NextResponse.json({ error: 'TWILIO_PHONE_NUMBER faltante' }, { status: 500 });
+  }
+  if (!appUrl) {
+    return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL faltante' }, { status: 500 });
   }
 
   const supabase = getSupabase();
@@ -47,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const { data: candidates, error: selectError } = await (supabase as any)
     .from('llamadas_agendadas')
-    .select('id, agente_telefono, lead:leads(id, nombre, phone)')
+    .select('id, agente_telefono, telefono_destino, lead:leads(id, nombre, phone)')
     .eq('estado', 'agendada')
     .lte('inicio', now)
     .is('twilio_call_sid', null);
@@ -69,7 +66,7 @@ export async function GET(req: NextRequest) {
     .update({ twilio_call_sid: 'pending' })
     .in('id', ids)
     .is('twilio_call_sid', null)
-    .select('id, agente_telefono, lead:leads(id, nombre, phone)');
+    .select('id, agente_telefono, telefono_destino, lead:leads(id, nombre, phone)');
 
   if (claimError) {
     console.error('[cron/llamadas] CLAIM error', claimError);
@@ -79,14 +76,27 @@ export async function GET(req: NextRequest) {
   const client = getTwilio();
   const resultados: Array<{ id: string; status: string; sid?: string; error?: string }> = [];
 
+  const releaseClaim = (id: string) =>
+    (supabase as any)
+      .from('llamadas_agendadas')
+      .update({ twilio_call_sid: null })
+      .eq('id', id);
+
   for (const row of (claimed ?? []) as any[]) {
-    const to = toE164(row.lead?.phone);
-    if (!to) {
-      await (supabase as any)
-        .from('llamadas_agendadas')
-        .update({ twilio_call_sid: null })
-        .eq('id', row.id);
-      resultados.push({ id: row.id, status: 'omitida', error: 'sin teléfono' });
+    // El primer leg va al AGENTE; el TwiML lo conecta con el lead cuando atiende.
+    // Los dos teléfonos se validan acá: despertar al vendedor para después
+    // descubrir que el lead no tiene número es peor que no llamar.
+    const to = normalizarTelefonoAR(row.agente_telefono).e164;
+    if (!to || !esTelefonoArgentino(to)) {
+      await releaseClaim(row.id);
+      resultados.push({ id: row.id, status: 'omitida', error: 'agente sin teléfono argentino válido' });
+      continue;
+    }
+
+    const destino = normalizarTelefonoAR(row.telefono_destino ?? row.lead?.phone).e164;
+    if (!destino || !esTelefonoArgentino(destino)) {
+      await releaseClaim(row.id);
+      resultados.push({ id: row.id, status: 'omitida', error: 'destino sin teléfono argentino válido' });
       continue;
     }
 
@@ -109,10 +119,7 @@ export async function GET(req: NextRequest) {
       resultados.push({ id: row.id, status: 'discada', sid: call.sid });
     } catch (err: any) {
       console.error('[cron/llamadas] Twilio error fila', row.id, err);
-      await (supabase as any)
-        .from('llamadas_agendadas')
-        .update({ twilio_call_sid: null })
-        .eq('id', row.id);
+      await releaseClaim(row.id);
       resultados.push({ id: row.id, status: 'error', error: err?.message });
     }
   }
