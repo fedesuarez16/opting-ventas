@@ -8,6 +8,7 @@ import {
   getLotes,
   previsualizar,
   importarContactos,
+  agregarContacto,
   corregirTelefono,
   cambiarEstado,
   dispararContacto,
@@ -16,6 +17,7 @@ import {
 } from '../services/contactosDiscadoService';
 import type { ResultadoImport } from '@/lib/contactosDiscadoImport';
 import { useAgenteTelefono } from './useAgenteTelefono';
+import { normalizarTelefonoAR } from '@/lib/telefonoAR';
 
 const ESTADO_BADGE: Record<EstadoContacto, string> = {
   pendiente: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -36,6 +38,9 @@ export default function BaseDiscadoTab() {
   const [loteFilter, setLoteFilter] = useState<string>('todos');
 
   const [importAbierto, setImportAbierto] = useState(false);
+  const [altaAbierta, setAltaAbierta] = useState(false);
+  const [alta, setAlta] = useState({ nombre: '', telefono: '', direccion: '', observacion: '' });
+  const [guardandoAlta, setGuardandoAlta] = useState(false);
   const [texto, setTexto] = useState('');
   const [lote, setLote] = useState('');
   const [importando, setImportando] = useState(false);
@@ -204,6 +209,33 @@ export default function BaseDiscadoTab() {
     }
   };
 
+  const altaDestino = useMemo(
+    () => (alta.telefono.trim() ? normalizarTelefonoAR(alta.telefono) : null),
+    [alta.telefono],
+  );
+
+  const onAgregar = async () => {
+    setGuardandoAlta(true);
+    setError(null);
+    try {
+      await agregarContacto({
+        nombre: alta.nombre,
+        telefono: alta.telefono,
+        direccion: alta.direccion,
+        observacion: alta.observacion,
+        lote: loteFilter === 'todos' ? null : loteFilter,
+      });
+      setAviso(`${alta.nombre.trim()} agregado a la base.`);
+      setAlta({ nombre: '', telefono: '', direccion: '', observacion: '' });
+      setAltaAbierta(false);
+      await reload();
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo agregar');
+    } finally {
+      setGuardandoAlta(false);
+    }
+  };
+
   const onLlamar = async (c: ContactoDiscado) => {
     if (!agenteTelefono.trim()) {
       setError('Cargá el teléfono del agente antes de llamar: es el que suena primero.');
@@ -320,11 +352,88 @@ export default function BaseDiscadoTab() {
                   : 'Iniciar tanda'}
             </Button>
           )}
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => setAltaAbierta((v) => !v)}>
+            {altaAbierta ? 'Cerrar' : 'Agregar contacto'}
+          </Button>
           <Button size="sm" variant="outline" className="text-xs" onClick={() => setImportAbierto((v) => !v)}>
             {importAbierto ? 'Cerrar' : 'Importar base'}
           </Button>
         </div>
       </div>
+
+      {/* Alta manual */}
+      {altaAbierta && (
+        <div className="mb-4 rounded-md border border-border bg-background p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="altaNombre" className="text-xs font-medium text-muted-foreground">Nombre *</label>
+              <input
+                id="altaNombre"
+                value={alta.nombre}
+                onChange={(e) => setAlta({ ...alta, nombre: e.target.value })}
+                placeholder="Nombre del comercio"
+                className="w-56 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="altaTel" className="text-xs font-medium text-muted-foreground">Teléfono *</label>
+              <input
+                id="altaTel"
+                type="tel"
+                value={alta.telefono}
+                onChange={(e) => setAlta({ ...alta, telefono: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') void onAgregar(); }}
+                placeholder="11 5555-1234"
+                className="w-44 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="altaDir" className="text-xs font-medium text-muted-foreground">Dirección</label>
+              <input
+                id="altaDir"
+                value={alta.direccion}
+                onChange={(e) => setAlta({ ...alta, direccion: e.target.value })}
+                className="w-64 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="altaObs" className="text-xs font-medium text-muted-foreground">Nota</label>
+              <input
+                id="altaObs"
+                value={alta.observacion}
+                onChange={(e) => setAlta({ ...alta, observacion: e.target.value })}
+                className="w-48 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+            <Button
+              size="sm"
+              disabled={!alta.nombre.trim() || !altaDestino?.e164 || guardandoAlta}
+              onClick={() => void onAgregar()}
+            >
+              {guardandoAlta ? 'Guardando…' : 'Agregar'}
+            </Button>
+          </div>
+
+          {altaDestino && (
+            <div className="mt-2 font-mono text-xs">
+              {altaDestino.e164 ? (
+                <span className={altaDestino.asumido ? 'text-amber-700' : 'text-emerald-700'}>
+                  → {altaDestino.e164} ({altaDestino.tipo})
+                  {altaDestino.asumido && ' · formato asumido, revisalo'}
+                </span>
+              ) : (
+                <span className="text-red-600">→ {altaDestino.motivo}</span>
+              )}
+            </div>
+          )}
+
+          {loteFilter !== 'todos' && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              Se va a guardar en el lote <strong>{loteFilter}</strong>.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Importador */}
       {importAbierto && (

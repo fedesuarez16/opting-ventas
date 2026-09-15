@@ -147,6 +147,47 @@ export async function importarContactos(
   };
 }
 
+/** Alta manual de un contacto suelto, sin pasar por la importación. */
+export async function agregarContacto(entrada: {
+  nombre: string;
+  telefono: string;
+  direccion?: string | null;
+  observacion?: string | null;
+  lote?: string | null;
+}): Promise<ContactoDiscado> {
+  const nombre = entrada.nombre.trim();
+  if (!nombre) throw new Error('El nombre es obligatorio');
+
+  const { e164, tipo, asumido, motivo } = normalizarTelefonoAR(entrada.telefono);
+  if (!e164) throw new Error(motivo ?? 'Teléfono inválido');
+
+  const { data, error } = await (getSupabase() as any)
+    .from('contactos_discado')
+    .insert({
+      nombre,
+      direccion: entrada.direccion?.trim() || null,
+      observacion: entrada.observacion?.trim() || null,
+      telefono_crudo: entrada.telefono.trim(),
+      telefono_e164: e164,
+      tipo,
+      asumido,
+      lote: entrada.lote?.trim() || null,
+      estado: 'pendiente',
+    })
+    .select(SELECT)
+    .single();
+
+  if (error) {
+    // 23505 = choque con el índice único por teléfono.
+    if ((error as any).code === '23505') {
+      throw new Error(`Ese teléfono ya está en la base (${e164})`);
+    }
+    console.error('[contactosDiscadoService.agregarContacto]', error);
+    throw new Error(error.message);
+  }
+  return data as ContactoDiscado;
+}
+
 /** Corrección manual del teléfono desde la tabla. */
 export async function corregirTelefono(
   id: string,
