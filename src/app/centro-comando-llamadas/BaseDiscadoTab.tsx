@@ -43,6 +43,7 @@ export default function BaseDiscadoTab() {
   const { agenteTelefono, setAgenteTelefono } = useAgenteTelefono();
   const [llamando, setLlamando] = useState<Set<string>>(new Set());
   const [sesion, setSesion] = useState<any | null>(null);
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [tandaBusy, setTandaBusy] = useState(false);
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
 
@@ -87,6 +88,26 @@ export default function BaseDiscadoTab() {
     return () => clearInterval(t);
   }, [sesion, cargarSesion, reload]);
 
+  // Sólo tiene sentido seleccionar lo que se puede discar.
+  const seleccionables = useMemo(
+    () => contactos.filter((c) => c.telefono_e164 && c.estado === 'pendiente'),
+    [contactos],
+  );
+
+  const toggleUno = (id: string) => {
+    setSeleccion((prev) => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      return s;
+    });
+  };
+
+  const toggleTodos = () => {
+    setSeleccion((prev) =>
+      prev.size === seleccionables.length ? new Set() : new Set(seleccionables.map((c) => c.id)),
+    );
+  };
+
   const iniciarTanda = async () => {
     if (!agenteTelefono.trim()) {
       setError('Cargá el teléfono del agente antes de arrancar la tanda.');
@@ -101,11 +122,17 @@ export default function BaseDiscadoTab() {
         body: JSON.stringify({
           agenteTelefono,
           lote: loteFilter === 'todos' ? null : loteFilter,
+          contactoIds: seleccion.size > 0 ? Array.from(seleccion) : undefined,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? 'No se pudo iniciar la tanda');
-      setAviso('Tanda iniciada. Atendé tu teléfono y quedate en línea: no vuelve a sonar.');
+      setAviso(
+        seleccion.size > 0
+          ? `Tanda iniciada con ${seleccion.size} contactos seleccionados. Atendé tu teléfono y quedate en línea.`
+          : 'Tanda iniciada. Atendé tu teléfono y quedate en línea: no vuelve a sonar.',
+      );
+      setSeleccion(new Set());
       await cargarSesion();
     } catch (e: any) {
       setError(e?.message ?? 'No se pudo iniciar la tanda');
@@ -286,7 +313,11 @@ export default function BaseDiscadoTab() {
             </Button>
           ) : (
             <Button size="sm" className="text-xs" disabled={tandaBusy} onClick={() => void iniciarTanda()}>
-              {tandaBusy ? 'Iniciando…' : 'Iniciar tanda'}
+              {tandaBusy
+                ? 'Iniciando…'
+                : seleccion.size > 0
+                  ? `Llamar a los ${seleccion.size} seleccionados`
+                  : 'Iniciar tanda'}
             </Button>
           )}
           <Button size="sm" variant="outline" className="text-xs" onClick={() => setImportAbierto((v) => !v)}>
@@ -366,6 +397,18 @@ export default function BaseDiscadoTab() {
         </div>
       )}
 
+      {seleccion.size > 0 && !sesion && (
+        <div className="mb-3 flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <span>
+            <strong>{seleccion.size}</strong> seleccionados. Al iniciar la tanda se va a llamar
+            sólo a estos, en orden, y cada uno queda marcado según cómo salga la llamada.
+          </span>
+          <button type="button" onClick={() => setSeleccion(new Set())} className="ml-3 text-xs text-blue-700 hover:underline">
+            Limpiar
+          </button>
+        </div>
+      )}
+
       {sesion && (
         <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -405,6 +448,15 @@ export default function BaseDiscadoTab() {
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
             <tr>
+              <th className="w-8 px-3 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Seleccionar todos"
+                  checked={seleccionables.length > 0 && seleccion.size === seleccionables.length}
+                  onChange={toggleTodos}
+                  disabled={seleccionables.length === 0 || !!sesion}
+                />
+              </th>
               <th className="px-3 py-2">Comercio</th>
               <th className="px-3 py-2">Dirección</th>
               <th className="px-3 py-2">Original</th>
@@ -416,7 +468,7 @@ export default function BaseDiscadoTab() {
           <tbody>
             {contactos.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
                   No hay contactos. Usá “Importar base” para cargar una.
                 </td>
               </tr>
@@ -428,7 +480,29 @@ export default function BaseDiscadoTab() {
               const ocupado = llamando.has(c.id) || c.estado === 'llamando';
 
               return (
-                <tr key={c.id} className="border-t border-border align-top">
+                <tr
+                  key={c.id}
+                  className={
+                    'border-t border-border align-top ' +
+                    (seleccion.has(c.id) ? 'bg-blue-50/60' : '')
+                  }
+                >
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar ${c.nombre}`}
+                      checked={seleccion.has(c.id)}
+                      onChange={() => toggleUno(c.id)}
+                      disabled={!c.telefono_e164 || c.estado !== 'pendiente' || !!sesion}
+                      title={
+                        !c.telefono_e164
+                          ? 'Sin teléfono válido'
+                          : c.estado !== 'pendiente'
+                            ? `Ya está en estado "${c.estado}"`
+                            : undefined
+                      }
+                    />
+                  </td>
                   <td className="px-3 py-2 font-medium text-foreground">
                     {c.nombre}
                     {c.observacion && (

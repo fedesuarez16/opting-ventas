@@ -23,6 +23,8 @@ export interface SesionDiscado {
   conference_name: string;
   agente_call_sid: string | null;
   lote: string | null;
+  /** Selección manual. null = todos los pendientes del lote. */
+  contacto_ids: string[] | null;
   estado: EstadoSesion;
   contacto_actual_id: string | null;
   llamadas_hechas: number;
@@ -30,8 +32,8 @@ export interface SesionDiscado {
 }
 
 const SESION_SELECT = `
-  id, agente_telefono, conference_name, agente_call_sid, lote, estado,
-  contacto_actual_id, llamadas_hechas, ultimo_error
+  id, agente_telefono, conference_name, agente_call_sid, lote, contacto_ids,
+  estado, contacto_actual_id, llamadas_hechas, ultimo_error
 `;
 
 export async function getSesion(supabase: any, sesionId: string): Promise<SesionDiscado | null> {
@@ -101,7 +103,12 @@ export async function discarSiguiente(
     .order('created_at', { ascending: true })
     .limit(1);
 
-  if (sesion.lote) q = q.eq('lote', sesion.lote);
+  // Si la tanda se armó con una selección manual, sólo entran esos contactos.
+  if (sesion.contacto_ids && sesion.contacto_ids.length > 0) {
+    q = q.in('id', sesion.contacto_ids);
+  } else if (sesion.lote) {
+    q = q.eq('lote', sesion.lote);
+  }
 
   const { data: candidatos, error: selectError } = await q;
   if (selectError) return { status: 500, error: selectError.message };

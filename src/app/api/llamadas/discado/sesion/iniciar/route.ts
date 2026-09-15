@@ -8,10 +8,12 @@ import { sanitizarSala } from '@/lib/llamadasTwiml';
 export async function POST(req: NextRequest) {
   let agenteTelefono: string | undefined;
   let lote: string | undefined;
+  let contactoIds: string[] | undefined;
   try {
     const body = await req.json();
     agenteTelefono = body?.agenteTelefono;
     lote = body?.lote;
+    contactoIds = Array.isArray(body?.contactoIds) ? body.contactoIds : undefined;
   } catch {
     return NextResponse.json({ error: 'Body inválido' }, { status: 400 });
   }
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
       agente_telefono: agente,
       conference_name: 'pendiente',
       lote: loteLimpio,
+      contacto_ids: contactoIds && contactoIds.length > 0 ? contactoIds : null,
       estado: 'iniciando',
     })
     .select('id')
