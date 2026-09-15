@@ -22,6 +22,7 @@ export interface ContactoDiscado {
   tipo: TipoTelefono | null;
   asumido: boolean;
   lote: string | null;
+  observacion: string | null;
   estado: EstadoContacto;
   ultima_llamada_id: string | null;
   ultimo_error: string | null;
@@ -31,7 +32,7 @@ export interface ContactoDiscado {
 
 const SELECT = `
   id, nombre, direccion, telefono_crudo, telefono_e164, tipo, asumido, lote,
-  estado, ultima_llamada_id, ultimo_error, created_at, updated_at
+  observacion, estado, ultima_llamada_id, ultimo_error, created_at, updated_at
 `;
 
 export async function getContactos(filtros?: {
@@ -109,23 +110,34 @@ export async function importarContactos(
     telefono_e164: c.telefono_e164,
     tipo: c.tipo,
     asumido: c.asumido,
+    observacion: c.observacion,
     lote: lote.trim() || null,
     estado: 'pendiente' as const,
   }));
 
-  // ignoreDuplicates: el índice único por teléfono hace que reimportar la misma
-  // base no cree filas repetidas ni pise el estado de las que ya se llamaron.
-  const { data, error } = await (getSupabase() as any)
-    .from('contactos_discado')
-    .upsert(filas, { onConflict: 'telefono_e164', ignoreDuplicates: true })
-    .select('id');
+  // Una base real trae miles de filas: un solo request no entra. Se manda por
+  // tandas, y `ignoreDuplicates` + el índice único por teléfono hacen que
+  // reimportar la misma base no cree repetidos ni pise lo ya llamado.
+  const TANDA = 500;
+  let insertados = 0;
 
-  if (error) {
-    console.error('[contactosDiscadoService.importarContactos]', error);
-    throw new Error(error.message);
+  for (let i = 0; i < filas.length; i += TANDA) {
+    const { data, error } = await (getSupabase() as any)
+      .from('contactos_discado')
+      .upsert(filas.slice(i, i + TANDA), {
+        onConflict: 'telefono_e164',
+        ignoreDuplicates: true,
+      })
+      .select('id');
+
+    if (error) {
+      console.error('[contactosDiscadoService.importarContactos]', error);
+      throw new Error(
+        `${error.message} (se alcanzaron a importar ${insertados} de ${filas.length})`,
+      );
+    }
+    insertados += (data ?? []).length;
   }
-
-  const insertados = (data ?? []).length;
   return {
     insertados,
     yaExistian: validos.length - insertados,

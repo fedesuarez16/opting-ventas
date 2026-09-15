@@ -313,9 +313,27 @@ export default function BaseDiscadoTab() {
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             rows={8}
-            placeholder={'Pegá la base acá.\nUna fila por línea: nombre, dirección, teléfono separados por TAB.'}
+            placeholder={'Pegá la base acá, o subí el CSV.\nReconoce comas, tabs y punto y coma, y ubica las columnas solo.'}
             className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
           />
+
+          {preview?.mapeo && (
+            <div className="mt-2 rounded border border-border bg-muted/40 px-2 py-1.5 text-xs">
+              <span className="font-medium text-muted-foreground">Columnas detectadas</span>{' '}
+              <span className="text-muted-foreground">({preview.mapeo.separador})</span>:{' '}
+              nombre <code>#{preview.mapeo.nombre + 1}</code>
+              {preview.mapeo.direccion !== null && <> · dirección <code>#{preview.mapeo.direccion + 1}</code></>}
+              {' '}· teléfono <code>#{preview.mapeo.telefono + 1}</code>
+              {preview.mapeo.observacion !== null && <> · observación <code>#{preview.mapeo.observacion + 1}</code></>}
+            </div>
+          )}
+
+          {preview && !preview.mapeo && (
+            <div className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700">
+              No pude reconocer ninguna columna de teléfonos. Revisá que el archivo tenga una
+              columna con números argentinos.
+            </div>
+          )}
 
           {previewStats && (
             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
@@ -336,9 +354,14 @@ export default function BaseDiscadoTab() {
           )}
 
           <div className="mt-3">
-            <Button size="sm" disabled={!texto.trim() || importando} onClick={onImportar}>
+            <Button size="sm" disabled={!texto.trim() || !preview?.mapeo || importando} onClick={onImportar}>
               {importando ? 'Importando…' : 'Importar'}
             </Button>
+            {importando && previewStats && previewStats.ok > 500 && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                Son {previewStats.ok} contactos, va por tandas: puede tardar un rato.
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -406,7 +429,14 @@ export default function BaseDiscadoTab() {
 
               return (
                 <tr key={c.id} className="border-t border-border align-top">
-                  <td className="px-3 py-2 font-medium text-foreground">{c.nombre}</td>
+                  <td className="px-3 py-2 font-medium text-foreground">
+                    {c.nombre}
+                    {c.observacion && (
+                      <div className="mt-0.5 text-[11px] font-normal italic text-muted-foreground">
+                        {c.observacion}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{c.direccion ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.telefono_crudo}</td>
                   <td className="px-3 py-2">
