@@ -19,6 +19,15 @@ export function toE164(phone: string | null | undefined): string | null {
   return `+${digits}`;
 }
 
+/**
+ * Cuántos segundos suena el destino antes de darse por vencido.
+ *
+ * El default de Twilio es 30, pero el agente ya está en línea (y facturando)
+ * durante todo ese tiempo. Nadie que vaya a atender tarda más de 15 segundos:
+ * los otros 15 sólo servían para pagar más caro el silencio de los que no están.
+ */
+export const DIAL_TIMEOUT_SEGUNDOS = 15;
+
 export const HANGUP_TWIML =
   '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
 
@@ -40,6 +49,7 @@ export function buildDialTwiml(opts: {
   destino: string | null | undefined;
   callerId?: string | null;
   actionUrl?: string | null;
+  timeoutSegundos?: number;
 }): string {
   // El destino se normaliza como teléfono argentino y se verifica de nuevo
   // antes de entregárselo a Twilio: un `+1…` acá sale como llamada real a
@@ -48,9 +58,11 @@ export function buildDialTwiml(opts: {
   if (!numero || !esTelefonoArgentino(numero)) return HANGUP_TWIML;
 
   const callerId = toE164(opts.callerId);
+  const timeout = opts.timeoutSegundos ?? DIAL_TIMEOUT_SEGUNDOS;
   const attrs = [
     callerId ? ` callerId="${callerId}"` : '',
     opts.actionUrl ? ` action="${escapeXmlAttr(opts.actionUrl)}" method="POST"` : '',
+    ` timeout="${timeout}"`,
     ' answerOnBridge="true"',
   ].join('');
 
@@ -58,4 +70,49 @@ export function buildDialTwiml(opts: {
 <Response>
   <Dial${attrs}><Number>${numero}</Number></Dial>
 </Response>`;
+}
+
+/**
+ * TwiML de conferencia para el discador con sesión persistente.
+ *
+ * El reparto de flags es lo que hace que funcione:
+ *
+ *   AGENTE  startConferenceOnEnter=false  → entra y escucha música de espera
+ *           endConferenceOnExit=true      → si cuelga, se termina la tanda
+ *
+ *   LEAD    startConferenceOnEnter=true   → al entrar ARRANCA la charla
+ *           endConferenceOnExit=false     → al colgar, el agente vuelve a espera
+ *
+ * Así el agente atiende UNA vez y se queda: entre lead y lead vuelve solo a la
+ * música, sin que su teléfono vuelva a sonar.
+ */
+export function buildConferenceTwiml(opts: {
+  sala: string;
+  rol: 'agente' | 'lead';
+  statusCallbackUrl?: string | null;
+}): string {
+  const sala = sanitizarSala(opts.sala);
+  if (!sala) return HANGUP_TWIML;
+
+  const esAgente = opts.rol === 'agente';
+  const attrs = [
+    ` startConferenceOnEnter="${esAgente ? 'false' : 'true'}"`,
+    ` endConferenceOnExit="${esAgente ? 'true' : 'false'}"`,
+    ' beep="false"',
+    opts.statusCallbackUrl
+      ? ` statusCallback="${escapeXmlAttr(opts.statusCallbackUrl)}"` +
+        ' statusCallbackMethod="POST" statusCallbackEvent="join leave"'
+      : '',
+  ].join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial><Conference${attrs}>${sala}</Conference></Dial>
+</Response>`;
+}
+
+/** El nombre de sala va como contenido XML: se limita a un juego seguro. */
+export function sanitizarSala(sala: string | null | undefined): string {
+  if (!sala) return '';
+  return String(sala).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
 }

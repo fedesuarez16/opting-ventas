@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { toE164, buildDialTwiml, HANGUP_TWIML } from '../llamadasTwiml';
+import {
+  toE164, buildDialTwiml, buildConferenceTwiml, HANGUP_TWIML, DIAL_TIMEOUT_SEGUNDOS,
+} from '../llamadasTwiml';
 
 describe('toE164', () => {
   it('normaliza un celular argentino con separadores', () => {
@@ -37,6 +39,17 @@ describe('buildDialTwiml', () => {
     expect(twiml).toContain('callerId="+13185836762"');
   });
 
+  it('acorta el timeout del <Dial> para no pagar el silencio del agente', () => {
+    const twiml = buildDialTwiml({ destino: '+5492215551234' });
+    expect(DIAL_TIMEOUT_SEGUNDOS).toBe(15);
+    expect(twiml).toContain('timeout="15"');
+  });
+
+  it('permite pisar el timeout', () => {
+    const twiml = buildDialTwiml({ destino: '+5492215551234', timeoutSegundos: 25 });
+    expect(twiml).toContain('timeout="25"');
+  });
+
   it('omite callerId si no se pasa', () => {
     const twiml = buildDialTwiml({ destino: '+5492215551234' });
     expect(twiml).not.toContain('callerId');
@@ -57,5 +70,39 @@ describe('buildDialTwiml', () => {
       actionUrl: 'https://x.test/api?a=1&b=2',
     });
     expect(twiml).toContain('a=1&amp;b=2');
+  });
+});
+
+describe('buildConferenceTwiml', () => {
+  it('el agente espera y puede cortar la tanda', () => {
+    const twiml = buildConferenceTwiml({ sala: 'sesion-abc123', rol: 'agente' });
+    expect(twiml).toContain('startConferenceOnEnter="false"');
+    expect(twiml).toContain('endConferenceOnExit="true"');
+    expect(twiml).toContain('>sesion-abc123</Conference>');
+  });
+
+  it('el lead arranca la charla pero no termina la conferencia al colgar', () => {
+    const twiml = buildConferenceTwiml({ sala: 'sesion-abc123', rol: 'lead' });
+    expect(twiml).toContain('startConferenceOnEnter="true"');
+    expect(twiml).toContain('endConferenceOnExit="false"');
+  });
+
+  it('sanitiza el nombre de sala', () => {
+    const twiml = buildConferenceTwiml({ sala: 'sala</Conference><Hangup/>', rol: 'lead' });
+    expect(twiml).not.toContain('<Hangup/>');
+    expect(twiml).toContain('>salaConferenceHangup</Conference>');
+  });
+
+  it('cuelga si la sala queda vacía tras sanitizar', () => {
+    expect(buildConferenceTwiml({ sala: '!!!', rol: 'lead' })).toBe(HANGUP_TWIML);
+  });
+
+  it('incluye el statusCallback de join/leave cuando se pasa', () => {
+    const twiml = buildConferenceTwiml({
+      sala: 'x1',
+      rol: 'agente',
+      statusCallbackUrl: 'https://opting-ventas.vercel.app/api/llamadas/discado/sesion/eventos',
+    });
+    expect(twiml).toContain('statusCallbackEvent="join leave"');
   });
 });
