@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS public.contactos_discado (
 );
 
 -- Un mismo número no se importa dos veces, aunque venga en otro lote o formato.
+-- NO puede ser un índice parcial: `ON CONFLICT (telefono_e164)` no matchea un
+-- índice con WHERE, y el upsert de la importación falla. Postgres ya permite
+-- múltiples NULL en un índice único, así que el WHERE no aportaba nada.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_contactos_discado_telefono
-  ON public.contactos_discado (telefono_e164)
-  WHERE telefono_e164 IS NOT NULL;
+  ON public.contactos_discado (telefono_e164);
 
 CREATE INDEX IF NOT EXISTS idx_contactos_discado_estado
   ON public.contactos_discado (estado);
