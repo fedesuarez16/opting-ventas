@@ -42,6 +42,8 @@ export default function BaseDiscadoTab() {
 
   const { agenteTelefono, setAgenteTelefono } = useAgenteTelefono();
   const [llamando, setLlamando] = useState<Set<string>>(new Set());
+  const [sesion, setSesion] = useState<any | null>(null);
+  const [tandaBusy, setTandaBusy] = useState(false);
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
 
   const reload = useCallback(async () => {
@@ -61,6 +63,75 @@ export default function BaseDiscadoTab() {
   }, [estadoFilter, loteFilter]);
 
   useEffect(() => { void reload(); }, [reload]);
+
+  // Estado de la tanda: mientras hay una sesión abierta se refresca sola, así
+  // se ve avanzar la cola sin tocar nada.
+  const cargarSesion = useCallback(async () => {
+    try {
+      const res = await fetch('/api/llamadas/discado/sesion/estado');
+      const json = await res.json();
+      setSesion(json?.sesion ?? null);
+      return json?.sesion ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => { void cargarSesion(); }, [cargarSesion]);
+
+  useEffect(() => {
+    if (!sesion) return;
+    const t = setInterval(() => {
+      void cargarSesion().then((s) => { if (s) void reload(); });
+    }, 5000);
+    return () => clearInterval(t);
+  }, [sesion, cargarSesion, reload]);
+
+  const iniciarTanda = async () => {
+    if (!agenteTelefono.trim()) {
+      setError('Cargá el teléfono del agente antes de arrancar la tanda.');
+      return;
+    }
+    setTandaBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/llamadas/discado/sesion/iniciar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agenteTelefono,
+          lote: loteFilter === 'todos' ? null : loteFilter,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? 'No se pudo iniciar la tanda');
+      setAviso('Tanda iniciada. Atendé tu teléfono y quedate en línea: no vuelve a sonar.');
+      await cargarSesion();
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo iniciar la tanda');
+    } finally {
+      setTandaBusy(false);
+    }
+  };
+
+  const detenerTanda = async () => {
+    if (!sesion) return;
+    setTandaBusy(true);
+    try {
+      await fetch('/api/llamadas/discado/sesion/detener', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sesionId: sesion.id }),
+      });
+      setAviso('Tanda detenida.');
+      await cargarSesion();
+      await reload();
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo detener');
+    } finally {
+      setTandaBusy(false);
+    }
+  };
 
   const preview: ResultadoImport | null = useMemo(
     () => (texto.trim() ? previsualizar(texto) : null),
@@ -209,6 +280,15 @@ export default function BaseDiscadoTab() {
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{contactos.length} contactos</span>
+          {sesion ? (
+            <Button size="sm" variant="destructive" className="text-xs" disabled={tandaBusy} onClick={() => void detenerTanda()}>
+              {tandaBusy ? 'Deteniendo…' : 'Detener tanda'}
+            </Button>
+          ) : (
+            <Button size="sm" className="text-xs" disabled={tandaBusy} onClick={() => void iniciarTanda()}>
+              {tandaBusy ? 'Iniciando…' : 'Iniciar tanda'}
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="text-xs" onClick={() => setImportAbierto((v) => !v)}>
             {importAbierto ? 'Cerrar' : 'Importar base'}
           </Button>
@@ -259,6 +339,26 @@ export default function BaseDiscadoTab() {
             <Button size="sm" disabled={!texto.trim() || importando} onClick={onImportar}>
               {importando ? 'Importando…' : 'Importar'}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {sesion && (
+        <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-medium">
+              {sesion.estado === 'esperando_agente'
+                ? 'Esperando que atiendas…'
+                : 'Tanda en curso'}
+            </span>
+            <span>Llamadas hechas: {sesion.llamadas_hechas}</span>
+            {sesion.contacto?.nombre && (
+              <span>Llamando a: <strong>{sesion.contacto.nombre}</strong></span>
+            )}
+            {sesion.lote && <span className="text-blue-700">Lote: {sesion.lote}</span>}
+          </div>
+          <div className="mt-1 text-xs text-blue-700">
+            Quedate en línea: entre llamada y llamada vas a escuchar música de espera, tu teléfono no vuelve a sonar.
           </div>
         </div>
       )}
