@@ -527,8 +527,15 @@ export default function BaseDiscadoTab() {
                 : 'Tanda en curso'}
             </span>
             <span>Llamadas hechas: {sesion.llamadas_hechas}</span>
-            {sesion.contacto?.nombre && (
-              <span>Llamando a: <strong>{sesion.contacto.nombre}</strong></span>
+            {sesion.contacto && (
+              <span>
+                Llamando a: <strong>{sesion.contacto.nombre || 'sin nombre'}</strong>
+                {sesion.contacto.telefono_e164 && (
+                  <span className="ml-1 font-mono text-xs text-blue-700">
+                    {sesion.contacto.telefono_e164}
+                  </span>
+                )}
+              </span>
             )}
             {sesion.lote && <span className="text-blue-700">Lote: {sesion.lote}</span>}
           </div>

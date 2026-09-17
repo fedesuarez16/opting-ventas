@@ -95,10 +95,14 @@ export function buildConferenceTwiml(opts: {
   if (!sala) return HANGUP_TWIML;
 
   const esAgente = opts.rol === 'agente';
+  // El beep al entrar el lead es la ÚNICA señal audible que tiene el agente.
+  // Twilio no repone la música de espera después de la primera llamada: una vez
+  // que la conferencia arrancó, entre lead y lead el agente escucha silencio, y
+  // sin beep no distingue "esperando" de "atendió alguien que no habla".
   const attrs = [
     ` startConferenceOnEnter="${esAgente ? 'false' : 'true'}"`,
     ` endConferenceOnExit="${esAgente ? 'true' : 'false'}"`,
-    ' beep="false"',
+    ` beep="${esAgente ? 'false' : 'onEnter'}"`,
     opts.statusCallbackUrl
       ? ` statusCallback="${escapeXmlAttr(opts.statusCallbackUrl)}"` +
         ' statusCallbackMethod="POST" statusCallbackEvent="join leave"'

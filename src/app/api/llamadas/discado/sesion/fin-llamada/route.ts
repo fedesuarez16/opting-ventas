@@ -48,17 +48,24 @@ export async function POST(req: NextRequest) {
   }
 
   const callStatus = params['CallStatus'];
+  // Con machineDetection activo, Twilio informa acá si atendió una persona.
+  const answeredBy = params['AnsweredBy'] ?? '';
+  const atendioMaquina = answeredBy.startsWith('machine') || answeredBy === 'fax';
   if (!callStatus || !TERMINALES.has(callStatus)) {
     return NextResponse.json({ ok: true, ignorado: callStatus });
   }
 
   // --- cerrar la llamada del lead ---
+  // Un contestador devuelve CallStatus='completed', pero no hubo conversación:
+  // marcarlo como realizada sería mentirle al CRM.
+  const hubodCharla = callStatus === 'completed' && !atendioMaquina;
+
   if (llamadaId) {
     await (supabase as any)
       .from('llamadas_agendadas')
       .update({
-        estado_twilio: callStatus,
-        estado: callStatus === 'completed' ? 'realizada' : 'cancelada',
+        estado_twilio: atendioMaquina ? `contestador (${answeredBy})` : callStatus,
+        estado: hubodCharla ? 'realizada' : 'cancelada',
       })
       .eq('id', llamadaId);
   }
@@ -68,8 +75,12 @@ export async function POST(req: NextRequest) {
     await (supabase as any)
       .from('contactos_discado')
       .update({
-        estado: callStatus === 'completed' ? 'llamado' : 'error',
-        ultimo_error: callStatus === 'completed' ? null : `Twilio: ${callStatus}`,
+        estado: hubodCharla ? 'llamado' : 'error',
+        ultimo_error: hubodCharla
+          ? null
+          : atendioMaquina
+            ? 'Atendió un contestador automático'
+            : `Twilio: ${callStatus}`,
       })
       .eq('id', sesion.contacto_actual_id);
   }

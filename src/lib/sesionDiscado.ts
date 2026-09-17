@@ -178,6 +178,10 @@ export async function discarSiguiente(
       statusCallbackMethod: 'POST',
       statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer', 'canceled'],
       timeout: 15,
+      // Detección de contestador: sin esto, el agente termina escuchando el
+      // buzón de voz y con la opción de dejar mensaje. Twilio resuelve
+      // humano/máquina antes de pedir el TwiML y lo informa en `AnsweredBy`.
+      machineDetection: 'Enable',
     });
 
     await supabase

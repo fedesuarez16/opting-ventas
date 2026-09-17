@@ -106,3 +106,13 @@ describe('buildConferenceTwiml', () => {
     expect(twiml).toContain('statusCallbackEvent="join leave"');
   });
 });
+
+describe('buildConferenceTwiml — señal audible', () => {
+  it('el lead entra con beep: es la única señal que tiene el agente', () => {
+    expect(buildConferenceTwiml({ sala: 'x1', rol: 'lead' })).toContain('beep="onEnter"');
+  });
+
+  it('el agente entra sin beep', () => {
+    expect(buildConferenceTwiml({ sala: 'x1', rol: 'agente' })).toContain('beep="false"');
+  });
+});
