@@ -46,51 +46,93 @@ const AUTO_ESTADOS_NORM = new Set([
 
 const PAGE_SIZE = 1000;
 
+// Cuántos requests de paginado mandamos a la vez. `chat_histories` son ~56
+// páginas: en serie tardaba ~1 minuto, en tandas de 8 baja a unos segundos sin
+// abrir 56 conexiones de golpe contra PostgREST.
+const FETCH_CONCURRENCY = 8;
+
+/**
+ * Trae todas las filas de una tabla en páginas de `PAGE_SIZE` pedidas en
+ * paralelo, en tandas de `FETCH_CONCURRENCY`.
+ *
+ * Cuenta primero con un request `head` para saber cuántas páginas hay, así no
+ * depende de ir descubriendo el final de a una.
+ */
+const fetchAllRows = async <T>(
+  supabase: ReturnType<typeof getSupabase>,
+  table: string,
+  columns: string,
+  orderBy: string,
+): Promise<{ rows: T[]; error: string | null }> => {
+  const { count, error: countError } = await supabase
+    .from(table)
+    .select(orderBy, { count: 'exact', head: true });
+
+  if (countError) return { rows: [], error: countError.message };
+
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const rows: T[] = [];
+
+  for (let start = 0; start < totalPages; start += FETCH_CONCURRENCY) {
+    const batch = Array.from(
+      { length: Math.min(FETCH_CONCURRENCY, totalPages - start) },
+      (_, i) => start + i,
+    );
+    const results = await Promise.all(
+      batch.map((page) =>
+        supabase
+          .from(table)
+          .select(columns)
+          // Orden explícito y estable: sin él, dos requests paralelos pueden
+          // devolver la misma fila dos veces y saltearse otra.
+          .order(orderBy, { ascending: true })
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+      ),
+    );
+    for (const { data, error } of results) {
+      if (error) return { rows: [], error: error.message };
+      rows.push(...((data as T[]) || []));
+    }
+  }
+
+  return { rows, error: null };
+};
+
 export async function POST() {
   try {
     const supabase = getSupabase();
 
-    const countByPhone = new Map<string, number>();
-    let offset = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('chat_histories')
-        .select('session_id')
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (error) {
-        return NextResponse.json(
-          { error: 'Error leyendo chat_histories', message: error.message },
-          { status: 500 },
-        );
-      }
-      const rows = (data as { session_id: string }[]) || [];
-      for (const row of rows) {
-        const key = last10(row.session_id);
-        if (!key) continue;
-        countByPhone.set(key, (countByPhone.get(key) || 0) + 1);
-      }
-      if (rows.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+    const [chatResult, leadsResult] = await Promise.all([
+      fetchAllRows<{ session_id: string }>(supabase, 'chat_histories', 'session_id', 'id'),
+      fetchAllRows<{ id: number | string; phone: string | null; estado: string | null }>(
+        supabase,
+        'leads',
+        'id, phone, estado',
+        'id',
+      ),
+    ]);
+
+    if (chatResult.error) {
+      return NextResponse.json(
+        { error: 'Error leyendo chat_histories', message: chatResult.error },
+        { status: 500 },
+      );
+    }
+    if (leadsResult.error) {
+      return NextResponse.json(
+        { error: 'Error leyendo leads', message: leadsResult.error },
+        { status: 500 },
+      );
     }
 
-    const allLeads: { id: number | string; phone: string | null; estado: string | null }[] = [];
-    let leadOffset = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('id, phone, estado')
-        .range(leadOffset, leadOffset + PAGE_SIZE - 1);
-      if (error) {
-        return NextResponse.json(
-          { error: 'Error leyendo leads', message: error.message },
-          { status: 500 },
-        );
-      }
-      const rows = (data as any[]) || [];
-      allLeads.push(...rows);
-      if (rows.length < PAGE_SIZE) break;
-      leadOffset += PAGE_SIZE;
+    const countByPhone = new Map<string, number>();
+    for (const row of chatResult.rows) {
+      const key = last10(row.session_id);
+      if (!key) continue;
+      countByPhone.set(key, (countByPhone.get(key) || 0) + 1);
     }
+
+    const allLeads = leadsResult.rows;
 
     const updates: { id: number | string; newEstado: string }[] = [];
     let skippedManual = 0;

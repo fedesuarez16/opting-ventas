@@ -204,15 +204,26 @@ export default function LeadsTablePage() {
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
-      try {
-        await fetch('/api/leads/recalificar-estados', { method: 'POST' });
-      } catch (e) {
-        console.warn('No se pudo recalificar estados antes de cargar la tabla:', e);
-      }
       const data = await getAllLeads();
       setLeads(data);
       setFilteredLeads(data);
       setIsLoading(false);
+
+      // La recalificación recorre `chat_histories` entero (~55k filas) para
+      // recontar mensajes por teléfono: esperarla antes de pintar la tabla
+      // costaba ~1 minuto. Corre en segundo plano y sólo refrescamos si
+      // efectivamente cambió algún estado.
+      try {
+        const res = await fetch('/api/leads/recalificar-estados', { method: 'POST' });
+        const json = await res.json();
+        if (json?.updated > 0) {
+          const refreshed = await getAllLeads();
+          setLeads(refreshed);
+          setFilteredLeads(refreshed);
+        }
+      } catch (e) {
+        console.warn('No se pudo recalificar estados:', e);
+      }
     };
     load();
   }, []);

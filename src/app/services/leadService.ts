@@ -386,41 +386,83 @@ export const recalificarLead = async (leadId: string): Promise<boolean> => {
 };
 
 /**
+ * Columnas de `leads` que `mapLeadRow` realmente lee.
+ *
+ * Con `select('*')` la tabla (29 columnas) pesa ~795KB cada 1000 filas; con esta
+ * lista baja a ~405KB. Las columnas omitidas (`mensaje_inicial`, `wamid`,
+ * `waba_id`, `tipo_mensaje`, `dentro_horario`, `timestamp_mensaje`, los
+ * `seguimiento_*` y `resena_previo_pago_enviada`) no las mapea nadie, así que
+ * ningún consumidor de `getAllLeads` las veía igual.
+ *
+ * Al agregar una columna nueva a la tabla hay que sumarla acá si `mapLeadRow`
+ * la va a usar: nombrar una columna inexistente hace fallar el request entero.
+ */
+const LEAD_LIST_COLUMNS = [
+  'id',
+  'nombre',
+  'phone',
+  'phone_from',
+  'estado',
+  'created_at',
+  'etiqueta',
+  'calidad',
+  'servicio',
+  'estado_chat',
+  'chat_activo',
+  'llamada_agendada',
+  'llamar',
+  'deriva_humano',
+  'presupuesto_etiqueta',
+  'inspeccion',
+  'empleado',
+  'dueno',
+  'lista_difusion',
+].join(',');
+
+/**
  * Obtiene todos los leads disponibles
  */
 export const getAllLeads = async (): Promise<Lead[]> => {
   try {
+    const supabase = getSupabase();
     // Supabase limita a 1000 filas por request por defecto.
-    // Paginamos para traer TODOS los leads de la tabla.
     const PAGE_SIZE = 1000;
-    let allData: any[] = [];
-    let page = 0;
-    let hasMore = true;
 
-    while (hasMore) {
-      const from = page * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+    // Contamos primero (request `head`, sin payload) para saber cuántas páginas
+    // hay y pedirlas TODAS en paralelo. En serie eran ~10 round-trips de ~1s.
+    const { count, error: countError } = await supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true });
 
-      const { data, error } = await getSupabase()
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(from, to);
+    if (countError) {
+      console.error('Error contando leads en Supabase:', countError.message);
+      return [];
+    }
 
+    const totalRows = count ?? 0;
+    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+
+    const pageResults = await Promise.all(
+      Array.from({ length: totalPages }, (_, page) =>
+        supabase
+          .from('leads')
+          .select(LEAD_LIST_COLUMNS)
+          // `id` como desempate: sin él, dos filas con el mismo `created_at`
+          // pueden ordenarse distinto en cada request paralelo y una página
+          // repetiría una fila que otra se saltea.
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+      ),
+    );
+
+    const allData: any[] = [];
+    for (const { data, error } of pageResults) {
       if (error) {
         console.error('Error fetching leads from Supabase:', error.message);
-        break;
+        continue;
       }
-
-      const rows = (data as any[]) || [];
-      allData = allData.concat(rows);
-
-      // Si recibimos menos de PAGE_SIZE, ya no hay más páginas
-      if (rows.length < PAGE_SIZE) {
-        hasMore = false;
-      } else {
-        page++;
-      }
+      allData.push(...((data as any[]) || []));
     }
 
     console.log(`📊 Total leads cargados de Supabase: ${allData.length}`);
