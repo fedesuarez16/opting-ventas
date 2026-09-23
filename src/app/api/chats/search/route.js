@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { ultimos10Digitos, POSTGREST_MAX_ROWS } from '@/lib/chatSessions';
 
 const getSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -78,101 +79,109 @@ export async function POST(request) {
     console.log('🔍 Búsqueda de chats para números:', normalizedSearchPhones);
 
     const supabase = getSupabase();
-    
-    // Obtener todos los mensajes de la base de datos
-    const { data: allMessages, error: messagesError } = await supabase
-      .from('chat_histories')
-      .select('*')
-      .order('created_at', { ascending: false });
 
-    if (messagesError) {
-      console.error('Error al obtener mensajes:', messagesError);
+    // Antes esto hacía `select('*')` sobre TODA la tabla sin `range()`. PostgREST
+    // corta en 1000 filas cuando no se le pide un rango, y `chat_histories` tiene
+    // ~55.000: el endpoint veía el 2% más nuevo (292 de 9.731 contactos) y para
+    // todo el resto respondía "no encontrado". Los leads que llevan tiempo
+    // esperando seguimiento son justamente los que quedan fuera de esa ventana,
+    // así que abrir su chat mostraba una conversación vacía que NO estaba vacía.
+    //
+    // Ahora el filtro lo hace Postgres: pedimos sólo las filas del contacto
+    // buscado, por sus últimos 10 dígitos. Además de correcto es más rápido,
+    // porque no traemos 55.000 filas para descartar 54.995.
+    const busquedas = await Promise.all(
+      normalizedSearchPhones.map(async (phone) => {
+        const clave = ultimos10Digitos(phone);
+        if (!clave) return { phone, clave: null, filas: [], error: null };
+
+        const { data, error } = await supabase
+          .from('chat_histories')
+          .select('*')
+          .ilike('session_id', `%${clave}%`)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(0, POSTGREST_MAX_ROWS - 1);
+
+        return { phone, clave, filas: data || [], error: error?.message || null };
+      })
+    );
+
+    const conError = busquedas.find((b) => b.error);
+    if (conError) {
+      console.error('Error al obtener mensajes:', conError.error);
       return NextResponse.json(
-        { 
+        {
           error: 'Error al buscar chats en la base de datos',
-          message: messagesError.message
-        }, 
+          message: conError.error
+        },
         { status: 500 }
       );
     }
 
-    // Agrupar mensajes por session_id y obtener el último mensaje de cada sesión
+    // Agrupamos por contacto (últimos 10 dígitos), NO por `session_id`: hay 24
+    // contactos cuya conversación está partida entre `+549...` y `549...`, y
+    // agrupar por session_id los mostraría como dos chats con la mitad de los
+    // mensajes cada uno.
     const sessionsMap = new Map();
-    
-    (allMessages || []).forEach(msg => {
-      const sessionId = msg.session_id;
-      if (!sessionsMap.has(sessionId)) {
-        sessionsMap.set(sessionId, {
-          id: sessionId,
-          session_id: sessionId,
-          last_message: msg,
-          messages: []
-        });
+
+    for (const { clave, filas } of busquedas) {
+      if (!clave) continue;
+      for (const msg of filas) {
+        // El `ilike` es una red amplia: confirmamos la identidad acá.
+        if (ultimos10Digitos(msg.session_id) !== clave) continue;
+
+        if (!sessionsMap.has(clave)) {
+          sessionsMap.set(clave, {
+            // `id` es el session_id del mensaje más nuevo: es el que el frontend
+            // usa después para pedir los mensajes.
+            id: msg.session_id,
+            session_id: msg.session_id,
+            last_message: msg,
+            messages: []
+          });
+        }
+        sessionsMap.get(clave).messages.push(msg);
       }
-      sessionsMap.get(sessionId).messages.push(msg);
-    });
+    }
 
-    const phonesToFind = new Set(normalizedSearchPhones);
     const foundChats = [];
+    const noEncontrados = [];
 
-    // Buscar chats que coincidan con los números buscados
-    sessionsMap.forEach((session, sessionId) => {
+    // La identidad ya quedó resuelta al agrupar por los últimos 10 dígitos, así
+    // que acá sólo armamos el objeto que espera el frontend. Antes había tres
+    // estrategias de matching encadenadas (exacto / últimos dígitos / inclusión)
+    // sobre un set de números pendientes; con el filtro hecho en Postgres son
+    // ruido, y la de inclusión además podía emparejar dos contactos distintos.
+    for (const { clave } of busquedas) {
+      if (!clave) continue;
+      const session = sessionsMap.get(clave);
+      if (!session) {
+        noEncontrados.push(clave);
+        continue;
+      }
+
       const lastMsg = session.messages[0];
       const messageData = lastMsg.message || {};
-      
-      // Extraer número de teléfono del mensaje
-      const phoneNumber = messageData.phone_number || 
-                         messageData.from || 
+
+      const phoneNumber = messageData.phone_number ||
+                         messageData.from ||
                          messageData.sender?.phone_number ||
                          messageData.contact?.phone_number ||
                          null;
-      
-      const normalizedPhone = extractNumericPhone(phoneNumber) || extractNumericPhone(sessionId);
-      
-      if (normalizedPhone) {
-        // Verificar coincidencia exacta
-        if (phonesToFind.has(normalizedPhone)) {
-          if (!foundChats.find(c => c.id === sessionId)) {
-            console.log(`✅ Chat encontrado (exacto): ${sessionId} para número ${normalizedPhone}`);
-            foundChats.push(createChatObject(session, lastMsg, messageData, normalizedPhone, phoneNumber));
-            phonesToFind.delete(normalizedPhone);
-          }
-        } else {
-          // Verificar coincidencia parcial
-          const phonesArray = Array.from(phonesToFind);
-          for (const searchPhone of phonesArray) {
-            // Comparación por últimos dígitos
-            const minLength = Math.min(normalizedPhone.length, searchPhone.length);
-            if (minLength >= 8) {
-              const lastDigits1 = normalizedPhone.slice(-Math.min(10, normalizedPhone.length));
-              const lastDigits2 = searchPhone.slice(-Math.min(10, searchPhone.length));
-              if (lastDigits1 === lastDigits2) {
-                if (!foundChats.find(c => c.id === sessionId)) {
-                  console.log(`✅ Chat encontrado (últimos dígitos): ${sessionId} - Chat: ${normalizedPhone} vs Buscado: ${searchPhone}`);
-                  foundChats.push(createChatObject(session, lastMsg, messageData, normalizedPhone, phoneNumber));
-                  phonesToFind.delete(searchPhone);
-                  break;
-                }
-              }
-            }
-            
-            // Comparación por inclusión
-            if (normalizedPhone.includes(searchPhone) || searchPhone.includes(normalizedPhone)) {
-              if (!foundChats.find(c => c.id === sessionId)) {
-                console.log(`✅ Chat encontrado (inclusión): ${sessionId} - Chat: ${normalizedPhone} vs Buscado: ${searchPhone}`);
-                foundChats.push(createChatObject(session, lastMsg, messageData, normalizedPhone, phoneNumber));
-                phonesToFind.delete(searchPhone);
-                break;
-              }
-            }
-          }
-        }
-      }
-    });
+
+      const normalizedPhone =
+        extractNumericPhone(phoneNumber) || extractNumericPhone(session.session_id);
+
+      console.log(`✅ Chat encontrado: ${session.session_id} (${session.messages.length} mensajes)`);
+      foundChats.push(
+        createChatObject(session, lastMsg, messageData, normalizedPhone, phoneNumber)
+      );
+    }
 
     console.log(`🎯 Total de chats encontrados: ${foundChats.length}`);
-    if (phonesToFind.size > 0) {
-      console.log(`⚠️ Números no encontrados:`, Array.from(phonesToFind));
+    if (noEncontrados.length > 0) {
+      console.log(`⚠️ Números sin conversación en chat_histories:`, noEncontrados);
     }
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { buildChatHistoryMessage } from '@/lib/chatHistory';
+import { ultimos10Digitos, variantesSessionId } from '@/lib/chatSessions';
 
 const getSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,24 +31,41 @@ export async function GET(request, { params }) {
     const after = searchParams.get('after'); // ID del mensaje más reciente que queremos obtener
 
     const supabase = getSupabase();
-    
-    // Construir query base
-    // Ordenar por created_at ascendente (más antiguos primero) para que el frontend los muestre en orden cronológico
-    let query = supabase
-      .from('chat_histories')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true });
 
-    // Aplicar paginación si existe
-    if (before) {
-      query = query.lt('id', parseInt(before));
-    }
-    if (after) {
-      query = query.gt('id', parseInt(after));
-    }
+    // `eq('session_id', id)` era una trampa: el mismo contacto está guardado con
+    // formatos distintos. Al 2026-09-23, de 9.755 session_id hay 9.701 con `+`
+    // adelante y 54 sin él, y 24 contactos tienen la conversación PARTIDA entre
+    // las dos formas. Con igualdad cruda, un id sin `+` no encontraba nada
+    // (conversación vacía) y un id partido mostraba la mitad de los mensajes.
+    //
+    // Probamos primero las variantes exactas, que usan el índice. Si no hay
+    // nada, caemos a los últimos 10 dígitos, que cubre cualquier formato.
+    const aplicarFiltros = (query) => {
+      let q = query.order('created_at', { ascending: true }).order('id', { ascending: true });
+      if (before) q = q.lt('id', parseInt(before));
+      if (after) q = q.gt('id', parseInt(after));
+      return q;
+    };
 
-    const { data: messages, error } = await query;
+    const variantes = variantesSessionId(sessionId);
+    let { data: messages, error } = await aplicarFiltros(
+      supabase.from('chat_histories').select('*').in('session_id', variantes)
+    );
+
+    if (!error && (!messages || messages.length === 0)) {
+      const clave = ultimos10Digitos(sessionId);
+      if (clave) {
+        const fallback = await aplicarFiltros(
+          supabase.from('chat_histories').select('*').ilike('session_id', `%${clave}%`)
+        );
+        if (!fallback.error) {
+          // El `ilike` es una red amplia: confirmamos identidad por últimos 10.
+          messages = (fallback.data || []).filter(
+            (m) => ultimos10Digitos(m.session_id) === clave
+          );
+        }
+      }
+    }
 
     if (error) {
       console.error('Error al obtener mensajes:', error);

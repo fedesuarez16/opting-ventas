@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { ultimos10Digitos, POSTGREST_MAX_ROWS } from '@/lib/chatSessions';
 
 const getSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,40 +47,68 @@ export async function GET(request) {
     const perPage = parseInt(searchParams.get('per_page') || '20', 10);
     
     const supabase = getSupabase();
-    
-    // Obtener todos los mensajes agrupados por session_id
-    // Primero obtenemos los últimos mensajes de cada sesión
-    const { data: allMessages, error: messagesError } = await supabase
-      .from('chat_histories')
-      .select('*')
-      .order('created_at', { ascending: false });
 
-    if (messagesError) {
-      console.error('Error al obtener mensajes:', messagesError);
-      return NextResponse.json(
-        { 
-          error: 'Error al obtener chats de la base de datos',
-          message: messagesError.message
-        }, 
-        { status: 500 }
-      );
-    }
-
-    // Agrupar mensajes por session_id y obtener el último mensaje de cada sesión
+    // Este `select` no llevaba `range()`. PostgREST corta en 1000 filas cuando no
+    // se le pide un rango, y `chat_histories` tiene ~55.000: el listado veía sólo
+    // el 2% más nuevo, reportaba 292 conversaciones en lugar de 9.755 y apagaba
+    // `has_more` ahí, así que las conversaciones viejas eran inalcanzables.
+    //
+    // Traemos las filas de a páginas, de la más nueva a la más vieja, y paramos
+    // en cuanto juntamos sesiones suficientes para la página pedida. La primera
+    // página sale con un solo request (1000 filas ≈ 292 sesiones, de sobra para
+    // 20 por página); sólo el paginado profundo paga más.
+    const sesionesNecesarias = page * perPage;
     const sessionsMap = new Map();
-    
-    (allMessages || []).forEach(msg => {
-      const sessionId = msg.session_id;
-      if (!sessionsMap.has(sessionId)) {
-        sessionsMap.set(sessionId, {
-          id: sessionId,
-          session_id: sessionId,
-          last_message: msg,
-          messages: []
-        });
+    let offset = 0;
+    let hayMasFilas = true;
+
+    while (hayMasFilas) {
+      const { data, error: messagesError } = await supabase
+        .from('chat_histories')
+        .select('*')
+        // Orden estable: `id` desempata a los mensajes que comparten `created_at`,
+        // si no el paginado por `range()` puede repetir y saltear filas.
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + POSTGREST_MAX_ROWS - 1);
+
+      if (messagesError) {
+        console.error('Error al obtener mensajes:', messagesError);
+        return NextResponse.json(
+          {
+            error: 'Error al obtener chats de la base de datos',
+            message: messagesError.message
+          },
+          { status: 500 }
+        );
       }
-      sessionsMap.get(sessionId).messages.push(msg);
-    });
+
+      const lote = data || [];
+
+      for (const msg of lote) {
+        // Agrupamos por contacto (últimos 10 dígitos), NO por `session_id`: hay
+        // 24 contactos con la conversación partida entre `+549...` y `549...`, y
+        // agrupar por session_id los listaría dos veces.
+        const clave = ultimos10Digitos(msg.session_id) || msg.session_id;
+        if (!sessionsMap.has(clave)) {
+          sessionsMap.set(clave, {
+            id: msg.session_id,
+            session_id: msg.session_id,
+            last_message: msg,
+            messages: []
+          });
+        }
+        sessionsMap.get(clave).messages.push(msg);
+      }
+
+      if (lote.length < POSTGREST_MAX_ROWS) hayMasFilas = false;
+      offset += POSTGREST_MAX_ROWS;
+
+      // Ya tenemos con qué llenar la página pedida: no hace falta seguir leyendo.
+      // Pedimos un margen de una página extra para poder responder `has_more`
+      // sin tener que recorrer la tabla entera.
+      if (sessionsMap.size > sesionesNecesarias) break;
+    }
 
     // Convertir a array y ordenar por fecha del último mensaje
     let conversations = Array.from(sessionsMap.values())
@@ -170,20 +199,30 @@ export async function GET(request) {
     }
 
     // Aplicar paginación
+    //
+    // `totalCount` es lo DESCUBIERTO hasta acá, no el total de la tabla: paramos
+    // de leer en cuanto tuvimos sesiones para esta página. Saber el total exacto
+    // exigiría un `distinct` sobre las ~55.000 filas en cada request.
+    // Por eso `has_more` mira también si quedaban filas sin leer: si no, al llegar
+    // al borde de lo escaneado el frontend creería que no hay más chats.
     const totalCount = conversations.length;
     const startIndex = (page - 1) * perPage;
     const endIndex = startIndex + perPage;
     const paginatedConversations = conversations.slice(startIndex, endIndex);
+    const hayMasPaginas = endIndex < totalCount || hayMasFilas;
 
     const pagination = {
       current_page: page,
       per_page: perPage,
-      total_pages: Math.ceil(totalCount / perPage),
+      total_pages: hayMasFilas ? null : Math.ceil(totalCount / perPage),
       total_count: totalCount,
-      has_more: endIndex < totalCount
+      total_count_es_parcial: hayMasFilas,
+      has_more: hayMasPaginas
     };
 
-    console.log(`Found ${totalCount} total conversations, showing ${paginatedConversations.length} in page ${page}`);
+    console.log(
+      `Found ${totalCount}${hayMasFilas ? '+' : ''} conversations, showing ${paginatedConversations.length} in page ${page}`
+    );
 
     return NextResponse.json({
       success: true,
