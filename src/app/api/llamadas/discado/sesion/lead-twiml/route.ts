@@ -18,8 +18,9 @@ export async function GET(req: NextRequest) {
   const sesionId = req.nextUrl.searchParams.get('sesionId');
   if (!sesionId) return xml(HANGUP_TWIML);
 
-  // Atendió un contestador: se corta acá. Meterlo a la conferencia le deja al
-  // agente el buzón de voz sonando y la opción de dejar mensaje.
+  // Con AMD asíncrono este TwiML se pide ANTES de que termine la detección, así
+  // que normalmente no llega AnsweredBy. Se chequea igual por si el modo cambia:
+  // el corte real de contestadores lo hace /sesion/amd.
   if (esMaquina(req.nextUrl.searchParams.get('AnsweredBy'))) {
     return xml(HANGUP_TWIML);
   }

@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
         method: 'GET',
         statusCallback: `${appUrl}/api/llamadas/twiml`,
         statusCallbackMethod: 'POST',
-        statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer', 'canceled'],
+        statusCallbackEvent: ['completed'],
       });
 
       await (supabase as any)

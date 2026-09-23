@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
       method: 'GET',
       statusCallback: `${appUrl}/api/llamadas/discado/sesion/fin-llamada?sesionId=${sesion.id}&rol=agente`,
       statusCallbackMethod: 'POST',
-      statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer', 'canceled'],
+      statusCallbackEvent: ['completed'],
     });
 
     await (supabase as any)

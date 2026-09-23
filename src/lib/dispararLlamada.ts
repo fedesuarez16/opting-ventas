@@ -84,7 +84,8 @@ export async function dispararLlamada(
       method: 'GET',
       statusCallback: `${appUrl}/api/llamadas/twiml`,
       statusCallbackMethod: 'POST',
-      statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer', 'canceled'],
+      // initiated|ringing|answered|completed son los únicos válidos (warning 21626).
+      statusCallbackEvent: ['completed'],
     });
 
     await supabase

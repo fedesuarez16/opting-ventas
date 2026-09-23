@@ -176,12 +176,21 @@ export async function discarSiguiente(
       method: 'GET',
       statusCallback: `${appUrl}/api/llamadas/discado/sesion/fin-llamada?sesionId=${sesionId}&llamadaId=${llamada.id}`,
       statusCallbackMethod: 'POST',
-      statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer', 'canceled'],
+      // Los únicos eventos válidos son initiated|ringing|answered|completed.
+      // Mandar 'busy'/'no-answer'/'failed'/'canceled' hacía que Twilio tirara
+      // el warning 21626 y los descartara: 'completed' ya cubre todos los
+      // finales, con el desenlace real en CallStatus.
+      statusCallbackEvent: ['completed'],
       timeout: 15,
-      // Detección de contestador: sin esto, el agente termina escuchando el
-      // buzón de voz y con la opción de dejar mensaje. Twilio resuelve
-      // humano/máquina antes de pedir el TwiML y lo informa en `AnsweredBy`.
+      // AMD ASÍNCRONO: conecta la llamada al instante y analiza en paralelo.
+      // Con el AMD sincrónico, Twilio escuchaba ~7 SEGUNDOS antes de pedir el
+      // TwiML: el prospecto atendía, decía "¿hola?" y no había nadie del otro
+      // lado. Esos 7 segundos de silencio cuelgan más llamadas que las que
+      // salva la detección de contestador.
       machineDetection: 'Enable',
+      asyncAmd: 'true',
+      asyncAmdStatusCallback: `${appUrl}/api/llamadas/discado/sesion/amd?sesionId=${sesionId}&llamadaId=${llamada.id}&contactoId=${candidato.id}`,
+      asyncAmdStatusCallbackMethod: 'POST',
     });
 
     await supabase
