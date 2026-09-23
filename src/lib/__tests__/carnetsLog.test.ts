@@ -49,6 +49,43 @@ Pago | Ref:5 | Estado:approved | Monto:50`;
     expect(parseWebhookLog(dup)).toHaveLength(1);
   });
 
+  it('deduplica por ref aunque la línea Pago no tenga Payment ID (log entremezclado)', () => {
+    // Caso real (Ref:3680): MP manda created/updated/merchant_order y el PHP loguea
+    // un "Pago" por cada uno, a veces dos seguidos en el mismo bloque y sin Payment ID.
+    const mezclado = `==== NUEVO WEBHOOK ====
+{"action":"payment.created","data":{"id":"9"},"date_created":"2026-08-04T10:52:07Z","type":"payment"}
+Pago | Ref:3680 | Estado:approved | Monto:20500
+BD OK
+Pago | Ref:3680 | Estado:approved | Monto:20500
+BD OK
+==== NUEVO WEBHOOK ====
+{"resource":"https://api.mercadolibre.com/merchant_orders/1","topic":"merchant_order"}
+Pago | Ref:3680 | Estado:approved | Monto:20500
+==== NUEVO WEBHOOK ====
+{"action":"payment.updated","data":{"id":"9"},"date_created":"2026-09-01T00:00:00Z","type":"payment"}
+Payment ID: 9
+Pago | Ref:3680 | Estado:approved | Monto:20500`;
+    expect(parseWebhookLog(mezclado)).toEqual([
+      { fecha: '2026-08-04T10:52:07Z', monto: 20500, ref: '3680', paymentId: null },
+    ]);
+  });
+
+  it('misma ref con montos distintos son pagos distintos', () => {
+    const dos = `Pago | Ref:3680 | Estado:approved | Monto:20500
+Pago | Ref:3680 | Estado:approved | Monto:5490
+Pago | Ref:3680 | Estado:approved | Monto:5490`;
+    expect(parseWebhookLog(dos).map(v => v.monto)).toEqual([20500, 5490]);
+  });
+
+  it('si la primera aparición no tiene fecha, toma la de un duplicado posterior', () => {
+    const sinFechaPrimero = `Pago | Ref:7 | Estado:approved | Monto:50
+{"action":"payment.updated","data":{"id":"1"},"date_created":"2026-08-10T00:00:00Z","type":"payment"}
+Pago | Ref:7 | Estado:approved | Monto:50`;
+    const ventas = parseWebhookLog(sinFechaPrimero);
+    expect(ventas).toHaveLength(1);
+    expect(ventas[0].fecha).toBe('2026-08-10T00:00:00Z');
+  });
+
   it('venta approved sin date_created previo queda con fecha null', () => {
     const noDate = `==== NUEVO WEBHOOK ====
 Payment ID: 77

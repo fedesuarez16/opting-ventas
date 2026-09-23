@@ -4,8 +4,8 @@
  * El log NO es estructurado: mezcla headers de texto, JSON crudo de Mercado Pago y
  * confirmaciones legibles. El único dato confiable de una venta concreta es la línea
  * `Pago | Ref:22 | Estado:approved | Monto:50`. La fecha NO está en esa línea: se toma,
- * de forma aproximada, del último `date_created` visto en el JSON del mismo bloque
- * (el evento `payment.created` que precede a la venta). Ver conversación con Gerardo.
+ * de forma aproximada, del último `date_created` visto antes de la primera aparición
+ * de la venta. Cada venta se loguea varias veces: se deduplica por ref + monto.
  */
 
 export interface CarnetVenta {
@@ -15,7 +15,7 @@ export interface CarnetVenta {
   monto: number;
   /** external_reference de la línea `Ref:`. */
   ref: string | null;
-  /** Payment ID más cercano dentro del bloque, usado para deduplicar. */
+  /** Payment ID más cercano dentro del bloque (informativo; suele faltar). */
   paymentId: string | null;
 }
 
@@ -38,7 +38,7 @@ const RE_REF = /Ref:\s*(\S+)/;
 const BLOQUE = '==== NUEVO WEBHOOK ====';
 
 /**
- * Parsea el log crudo y devuelve las ventas aprobadas, deduplicadas por paymentId.
+ * Parsea el log crudo y devuelve las ventas aprobadas, deduplicadas por ref + monto.
  * Función pura: no toca red ni estado global.
  */
 export function parseWebhookLog(raw: string): CarnetVenta[] {
@@ -79,19 +79,35 @@ export function parseWebhookLog(raw: string): CarnetVenta[] {
     }
   }
 
-  return dedupePorPaymentId(ventas);
+  return dedupePorRefMonto(ventas);
 }
 
-/** Dedup por paymentId (Mercado Pago reintenta webhooks). Las ventas sin id se conservan. */
-function dedupePorPaymentId(ventas: CarnetVenta[]): CarnetVenta[] {
-  const vistos = new Set<string>();
+/**
+ * Dedup por ref + monto, conservando la primera aparición.
+ *
+ * Mercado Pago notifica cada pago varias veces (payment.created, payment.updated,
+ * merchant_order) y el PHP loguea una línea `Pago` por cada una; además los bloques
+ * concurrentes se escriben entremezclados, así que la mayoría de esas líneas quedan
+ * sin `Payment ID` y no se pueden deduplicar por paymentId. La ref (external_reference)
+ * sí viene siempre. Se suma el monto porque una misma ref puede tener pagos distintos.
+ */
+function dedupePorRefMonto(ventas: CarnetVenta[]): CarnetVenta[] {
+  const porClave = new Map<string, CarnetVenta>();
   const out: CarnetVenta[] = [];
   for (const v of ventas) {
-    if (v.paymentId) {
-      if (vistos.has(v.paymentId)) continue;
-      vistos.add(v.paymentId);
+    const clave = v.ref ? `${v.ref}|${v.monto}` : v.paymentId;
+    if (!clave) {
+      out.push(v);
+      continue;
     }
-    out.push(v);
+    const previa = porClave.get(clave);
+    if (previa) {
+      if (!previa.fecha) previa.fecha = v.fecha;
+      continue;
+    }
+    const copia = { ...v };
+    porClave.set(clave, copia);
+    out.push(copia);
   }
   return out;
 }
