@@ -18,7 +18,7 @@ import {
 } from '../services/contactosDiscadoService';
 import type { ResultadoImport } from '@/lib/contactosDiscadoImport';
 import { useAgenteTelefono } from './useAgenteTelefono';
-import NotasInput from './NotasInput';
+import NotasModal from './NotasModal';
 import { normalizarTelefonoAR } from '@/lib/telefonoAR';
 
 const ESTADO_BADGE: Record<EstadoContacto, string> = {
@@ -670,8 +670,9 @@ export default function BaseDiscadoTab() {
                     </span>
                   </td>
                   <td className="px-3 py-2">
-                    <NotasInput
+                    <NotasModal
                       valor={c.observacion}
+                      titulo={c.nombre}
                       onGuardar={async (observacion) => {
                         const actualizado = await actualizarObservacion(c.id, observacion);
                         setContactos((prev) => prev.map((x) => (x.id === actualizado.id ? actualizado : x)));

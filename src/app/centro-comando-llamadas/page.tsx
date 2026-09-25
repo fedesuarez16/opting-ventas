@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import LlamadaModal, { type LlamadaModalInitial } from '../calendario-llamadas/LlamadaModal';
 import BaseDiscadoTab from './BaseDiscadoTab';
 import MarcadorRapido from './MarcadorRapido';
-import NotasInput from './NotasInput';
+import NotasModal from './NotasModal';
 import {
   getLlamadasAll,
   searchLeadsLite,
@@ -380,8 +380,9 @@ export default function CentroComandoLlamadasPage() {
                             {formatDateTime(row.inicio)}
                           </td>
                           <td className="px-4 py-3">
-                            <NotasInput
+                            <NotasModal
                               valor={row.notas}
+                              titulo={row.lead?.nombre ?? row.nombre_contacto ?? row.titulo}
                               onGuardar={async (notas) => {
                                 const actualizada = await updateLlamada(row.id, { notas });
                                 setLlamadas((prev) =>
