@@ -247,7 +247,7 @@ export default function BaseDiscadoTab() {
     setError(null);
     try {
       await dispararContacto(c.id, agenteTelefono);
-      setAviso(`Llamando a ${c.nombre}. Atendé tu teléfono: suena primero el del agente.`);
+      setAviso(`Llamando a ${c.nombre}${c.direccion ? ` (${c.direccion})` : ''}. Atendé tu teléfono: suena primero el del agente.`);
       await reload();
     } catch (e: any) {
       setError(`${c.nombre}: ${e?.message ?? 'no se pudo llamar'}`);
@@ -541,6 +541,11 @@ export default function BaseDiscadoTab() {
             )}
             {sesion.lote && <span className="text-blue-700">Lote: {sesion.lote}</span>}
           </div>
+          {sesion.contacto?.direccion && (
+            <div className="mt-1 text-sm">
+              Dirección: <strong>{sesion.contacto.direccion}</strong>
+            </div>
+          )}
           <div className="mt-1 text-xs text-blue-700">
             Quedate en línea: entre llamada y llamada vas a escuchar música de espera, tu teléfono no vuelve a sonar.
           </div>

@@ -7,7 +7,7 @@ export async function GET() {
 
   const { data, error } = await (supabase as any)
     .from('sesiones_discado')
-    .select('id, agente_telefono, lote, estado, contacto_actual_id, llamadas_hechas, ultimo_error, created_at, contacto:contactos_discado(nombre, telefono_e164)')
+    .select('id, agente_telefono, lote, estado, contacto_actual_id, llamadas_hechas, ultimo_error, created_at, contacto:contactos_discado(nombre, telefono_e164, direccion)')
     .not('estado', 'in', '("finalizada","error")')
     .order('created_at', { ascending: false })
     .limit(1);
