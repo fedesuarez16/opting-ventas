@@ -38,6 +38,9 @@ export interface LlamadaAgendada {
     nombre: string | null;
     phone: string | null;
   } | null;
+  contacto?: {
+    direccion: string | null;
+  } | null;
 }
 
 export interface LlamadaInput {
@@ -57,7 +60,8 @@ const SELECT_WITH_LEAD = `
   id, lead_id, nombre_contacto, titulo, notas, inicio, fin, estado, resultado, agente,
   agente_telefono, twilio_call_sid, estado_twilio, grabacion_url, calendly_uuid,
   created_at, updated_at,
-  lead:leads ( id, nombre, phone )
+  lead:leads ( id, nombre, phone ),
+  contacto:contactos_discado!llamadas_agendadas_contacto_discado_id_fkey ( direccion )
 `;
 
 export const getLlamadasInRange = async (

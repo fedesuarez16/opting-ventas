@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import AppLayout from '../components/AppLayout';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import LlamadaModal, { type LlamadaModalInitial } from '../calendario-llamadas/LlamadaModal';
 import BaseDiscadoTab from './BaseDiscadoTab';
@@ -11,6 +12,7 @@ import MarcadorRapido from './MarcadorRapido';
 import {
   getLlamadasAll,
   searchLeadsLite,
+  updateLlamada,
   type EstadoLlamada,
   type LeadLite,
   type LlamadaAgendada,
@@ -60,6 +62,71 @@ const ESTADO_TWILIO_PILL: Record<string, string> = {
   'no-answer': 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-600/15',
   canceled: 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-600/15',
 };
+
+/**
+ * Input de notas por fila. Guarda al salir del campo (o con Enter) sólo si el
+ * texto cambió. Mientras tiene foco no se pisa con los refrescos de la tabla.
+ */
+function NotasInput({
+  llamada,
+  onSaved,
+}: {
+  llamada: LlamadaAgendada;
+  onSaved: (actualizada: LlamadaAgendada) => void;
+}) {
+  const [value, setValue] = useState(llamada.notas ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(false);
+  const focused = useRef(false);
+  const cancelar = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setValue(llamada.notas ?? '');
+  }, [llamada.notas]);
+
+  const guardar = async () => {
+    focused.current = false;
+    if (cancelar.current) {
+      cancelar.current = false;
+      setValue(llamada.notas ?? '');
+      return;
+    }
+    const nuevo = value.trim();
+    if (nuevo === (llamada.notas ?? '').trim()) return;
+    setSaving(true);
+    setError(false);
+    try {
+      const actualizada = await updateLlamada(llamada.id, { notas: nuevo || null });
+      onSaved(actualizada);
+    } catch {
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Input
+      value={value}
+      placeholder="Notas…"
+      disabled={saving}
+      title={error ? 'No se pudo guardar la nota' : value || undefined}
+      className={`h-8 min-w-[180px] text-sm ${error ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={guardar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          cancelar.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 export default function CentroComandoLlamadasPage() {
   const [tab, setTab] = useState<'agendadas' | 'discado'>('agendadas');
@@ -303,17 +370,19 @@ export default function CentroComandoLlamadasPage() {
                   <tr>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lead</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Teléfono</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Dirección</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Agente tel.</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Estado Twilio</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Inicio</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Notas</th>
                     <th className="px-4 py-3 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                         No hay llamadas para mostrar.
                       </td>
                     </tr>
@@ -346,6 +415,11 @@ export default function CentroComandoLlamadasPage() {
                           <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap tabular-nums">
                             {row.lead?.phone ?? '—'}
                           </td>
+                          <td className="px-4 py-3 text-sm text-slate-600 max-w-[220px]">
+                            <span className="block truncate" title={row.contacto?.direccion ?? undefined}>
+                              {row.contacto?.direccion ?? '—'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap tabular-nums">
                             {row.agente_telefono ?? '—'}
                           </td>
@@ -369,6 +443,16 @@ export default function CentroComandoLlamadasPage() {
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                             {formatDateTime(row.inicio)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <NotasInput
+                              llamada={row}
+                              onSaved={(actualizada) =>
+                                setLlamadas((prev) =>
+                                  prev.map((l) => (l.id === actualizada.id ? actualizada : l)),
+                                )
+                              }
+                            />
                           </td>
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-2">
