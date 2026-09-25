@@ -210,6 +210,24 @@ export async function corregirTelefono(
   return data as ContactoDiscado;
 }
 
+export async function actualizarObservacion(
+  id: string,
+  observacion: string | null,
+): Promise<ContactoDiscado> {
+  const { data, error } = await (getSupabase() as any)
+    .from('contactos_discado')
+    .update({ observacion })
+    .eq('id', id)
+    .select(SELECT)
+    .single();
+
+  if (error) {
+    console.error('[contactosDiscadoService.actualizarObservacion]', error);
+    throw new Error(error.message);
+  }
+  return data as ContactoDiscado;
+}
+
 export async function cambiarEstado(
   id: string,
   estado: EstadoContacto,

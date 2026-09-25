@@ -10,6 +10,7 @@ import {
   importarContactos,
   agregarContacto,
   corregirTelefono,
+  actualizarObservacion,
   cambiarEstado,
   dispararContacto,
   type ContactoDiscado,
@@ -17,6 +18,7 @@ import {
 } from '../services/contactosDiscadoService';
 import type { ResultadoImport } from '@/lib/contactosDiscadoImport';
 import { useAgenteTelefono } from './useAgenteTelefono';
+import NotasInput from './NotasInput';
 import { normalizarTelefonoAR } from '@/lib/telefonoAR';
 
 const ESTADO_BADGE: Record<EstadoContacto, string> = {
@@ -578,13 +580,14 @@ export default function BaseDiscadoTab() {
               <th className="px-3 py-2">Original</th>
               <th className="px-3 py-2">A discar</th>
               <th className="px-3 py-2">Estado</th>
+              <th className="px-3 py-2">Notas</th>
               <th className="px-3 py-2 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {contactos.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
                   No hay contactos. Usá “Importar base” para cargar una.
                 </td>
               </tr>
@@ -621,11 +624,6 @@ export default function BaseDiscadoTab() {
                   </td>
                   <td className="px-3 py-2 font-medium text-foreground">
                     {c.nombre}
-                    {c.observacion && (
-                      <div className="mt-0.5 text-[11px] font-normal italic text-muted-foreground">
-                        {c.observacion}
-                      </div>
-                    )}
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{c.direccion ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.telefono_crudo}</td>
@@ -670,6 +668,15 @@ export default function BaseDiscadoTab() {
                     <span className={`inline-block rounded border px-2 py-0.5 text-xs ${ESTADO_BADGE[c.estado]}`}>
                       {c.estado}
                     </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <NotasInput
+                      valor={c.observacion}
+                      onGuardar={async (observacion) => {
+                        const actualizado = await actualizarObservacion(c.id, observacion);
+                        setContactos((prev) => prev.map((x) => (x.id === actualizado.id ? actualizado : x)));
+                      }}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-2">
